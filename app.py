@@ -22,14 +22,17 @@ ROOT = Path(__file__).resolve().parent
 RESULTS = ROOT / "results"
 
 # ------------------------------------------------------------------ design tokens
-INK, INK2, MUTED = "#0b0b0b", "#52514e", "#898781"
-GRID, AXIS, SURFACE = "#e1e0d9", "#c3c2b7", "#fcfcfb"
-GOOD_TEXT, CRITICAL = "#006300", "#d03b3b"
-BAND = "rgba(11,11,11,0.045)"
-FONT = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
-# one fixed colour per strategy (categorical slots 1-3 and 7 of the validated palette); Static is the grey baseline
-STRATEGY_COLORS = [("static", MUTED), ("transfer", "#2a78d6"), ("full", "#eb6834"),
-                   ("replay 100", "#1baf7a"), ("replay 500", "#6250d6")]
+INK, INK2, MUTED = "#0f172a", "#475569", "#94a3b8"
+GRID, AXIS, SURFACE = "#eef0f6", "#d5d9e4", "#ffffff"
+PAGE_BG, BORDER = "#f5f6fb", "#e5e8f0"
+ACCENT = "#4f46e5"
+GOOD_TEXT, CRITICAL = "#047857", "#e11d48"
+DRIFT = "#f59e0b"
+BAND = "rgba(245,158,11,0.10)"
+FONT = '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif'
+# one fixed colour per strategy; Static is the neutral grey baseline
+STRATEGY_COLORS = [("static", "#94a3b8"), ("transfer", "#3b82f6"), ("full", "#f97316"),
+                   ("replay 100", "#10b981"), ("replay 500", "#8b5cf6")]
 REGIME_LABEL = {"stable": "Stable", "data_drift": "Data", "relational_drift": "Relational", "both": "Both"}
 
 
@@ -65,32 +68,63 @@ st.set_page_config(page_title="Drift monitor", page_icon=None, layout="wide",
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap');
-html, body, .stApp, [class*="st-"], button, input, textarea { font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
-.stApp { background: #fcfcfb; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+html, body, .stApp { font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
+.stApp :is(p, label, button, input, textarea, h1, h2, h3, h4, li, a, td, th, div),
+.stApp span:not([data-testid="stIconMaterial"]) { font-family: inherit; }
+/* keep Streamlit's icon font intact (fixes the "keyboard_double_" text in the sidebar) */
+[data-testid="stIconMaterial"], [data-testid="stIconMaterial"] * {
+    font-family: "Material Symbols Rounded", "Material Icons" !important; }
+.stApp { background: #f5f6fb; color: #0f172a; }
 #MainMenu, footer { visibility: hidden; }
 header[data-testid="stHeader"] { background: transparent; }
-.block-container { max-width: 1240px; padding-top: 2.4rem; padding-bottom: 4rem; }
-h1, h2, h3, h4 { letter-spacing: -0.01em; color: #0b0b0b; }
-.app-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap;
-            padding-bottom: 1.1rem; border-bottom: 1px solid #e1e0d9; }
-.app-title { font-size: 1.65rem; font-weight: 600; line-height: 1.15; color: #0b0b0b; }
-.app-sub { font-size: .95rem; color: #52514e; margin-top: .3rem; }
-.app-meta { font-size: .85rem; color: #898781; text-align: right; }
-.verdict { display: flex; align-items: center; gap: .6rem; font-size: 1.05rem; font-weight: 500; margin: 1.4rem 0 .2rem; }
+.block-container { max-width: 1280px; padding-top: 1.6rem; padding-bottom: 4rem; }
+h1, h2, h3, h4 { letter-spacing: -0.01em; color: #0f172a; }
+
+.hero { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;
+        padding: 28px 32px; border-radius: 20px; color: #fff;
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 55%, #3b82f6 100%);
+        box-shadow: 0 10px 30px rgba(79,70,229,.25); }
+.hero-title { font-size: 1.9rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; color: #fff; }
+.hero-sub { font-size: .95rem; color: rgba(255,255,255,.85); margin-top: .35rem; max-width: 62ch; }
+.hero-badge { font-size: .8rem; font-weight: 500; color: #fff; padding: 7px 14px; border-radius: 999px;
+              background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35); }
+
+.verdict { display: flex; align-items: center; gap: .7rem; font-size: 1rem; font-weight: 500;
+           margin: 1.3rem 0 0; padding: 14px 18px; border-radius: 14px; border: 1px solid; }
+.verdict.ok  { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.verdict.bad { background: #fff1f2; border-color: #fecdd3; color: #9f1239; }
 .verdict svg { flex: none; }
-.kpi-strip { display: flex; flex-wrap: wrap; border-top: 1px solid #e1e0d9; border-bottom: 1px solid #e1e0d9; margin: 1rem 0 1.6rem; }
-.kpi { flex: 1 1 170px; padding: 14px 20px; border-left: 1px solid #e1e0d9; }
-.kpi:first-child { border-left: none; padding-left: 0; }
-.kpi-label { font-size: .8rem; color: #52514e; }
-.kpi-value { font-size: 1.75rem; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: #0b0b0b; }
-.kpi-note { font-size: .78rem; color: #898781; }
-.sec { font-size: 1.02rem; font-weight: 600; margin: 1.8rem 0 .15rem; color: #0b0b0b; }
-.sec-note { font-size: .85rem; color: #52514e; margin-bottom: .6rem; max-width: 70ch; }
-.takeaway { font-size: .95rem; color: #0b0b0b; margin: .25rem 0; max-width: 75ch; }
-button[data-baseweb="tab"] { font-size: .92rem; font-weight: 500; padding-left: .2rem; padding-right: .2rem; margin-right: 1.4rem; }
-[data-testid="stSidebar"] { border-right: 1px solid #e1e0d9; }
-@media (max-width: 640px) { .kpi { flex-basis: 45%; border-left: none; padding-left: 0; } .app-meta { text-align: left; } }
+
+.kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin: 1.1rem 0 1.4rem; }
+.kpi { background: #fff; border: 1px solid #e5e8f0; border-radius: 16px; padding: 16px 18px;
+       box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+.kpi-label { font-size: .74rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+.kpi-value { font-size: 1.7rem; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; color: #0f172a; }
+.kpi-note { font-size: .78rem; color: #94a3b8; }
+
+.sec { font-size: 1.08rem; font-weight: 600; margin: 2rem 0 .15rem; color: #0f172a; }
+.sec-note { font-size: .86rem; color: #64748b; margin-bottom: .7rem; max-width: 72ch; }
+.takeaway { font-size: .93rem; color: #0f172a; margin: .5rem 0; padding: 12px 14px; background: #fff;
+            border: 1px solid #e5e8f0; border-left: 3px solid #4f46e5; border-radius: 10px; max-width: 75ch; }
+
+/* tabs as a pill switcher */
+div[data-baseweb="tab-list"] { gap: 4px; background: #e9ebf4; padding: 4px; border-radius: 12px; width: fit-content; }
+button[data-baseweb="tab"] { height: auto; padding: 8px 16px; margin: 0; border-radius: 9px; font-size: .9rem; font-weight: 500; color: #475569; }
+button[data-baseweb="tab"][aria-selected="true"] { background: #fff; color: #4f46e5; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { display: none; }
+
+/* charts and tables as cards */
+[data-testid="stPlotlyChart"] { background: #fff; border: 1px solid #e5e8f0; border-radius: 16px; padding: 10px 8px;
+                                box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+[data-testid="stDataFrame"] { border: 1px solid #e5e8f0; border-radius: 14px; overflow: hidden; }
+[data-testid="stExpander"] { background: #fff; border: 1px solid #e5e8f0 !important; border-radius: 14px; margin-top: .8rem; }
+
+[data-testid="stSidebar"] { background: #fff; border-right: 1px solid #e5e8f0; }
+button[data-testid="stBaseButton-primary"], .stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed); border: none; border-radius: 10px; color: #fff; font-weight: 600; }
+button[data-testid="stBaseButton-primary"]:hover { filter: brightness(1.08); }
+@media (max-width: 640px) { .hero { padding: 20px; } .hero-title { font-size: 1.5rem; } }
 </style>
 """, unsafe_allow_html=True)
 
@@ -129,7 +163,7 @@ def style(fig, height=380, legend=True):
         font=dict(family=FONT, size=12, color=INK2), margin=dict(l=56, r=24, t=40, b=44),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
                     bgcolor="rgba(0,0,0,0)", font=dict(size=12, color=INK2)),
-        hoverlabel=dict(bgcolor="#ffffff", bordercolor=GRID, font=dict(family=FONT, size=12, color=INK)))
+        hoverlabel=dict(bgcolor="#ffffff", bordercolor=BORDER, font=dict(family=FONT, size=12, color=INK)))
     fig.update_xaxes(showgrid=False, zeroline=False, linecolor=AXIS, ticks="outside", tickcolor=AXIS,
                      tickfont=dict(color=MUTED), title_font=dict(color=INK2))
     fig.update_yaxes(gridcolor=GRID, gridwidth=1, zeroline=False, linecolor="rgba(0,0,0,0)",
@@ -167,10 +201,11 @@ with st.sidebar:
 meta = ""
 if cfg:
     meta = f'{"Fast" if cfg.get("fast") else "Full"} run, seed {cfg.get("seed", 0)}'
+badge = f'<div class="hero-badge">{meta}</div>' if meta else ""
 st.markdown(
-    f'<div class="app-head"><div><div class="app-title">Drift monitor</div>'
-    f'<div class="app-sub">GRU regression on a 60,000-row industrial sensor stream, with drift detection and model adaptation</div></div>'
-    f'<div class="app-meta">{meta}</div></div>', unsafe_allow_html=True)
+    f'<div class="hero"><div><div class="hero-title">Drift monitor</div>'
+    f'<div class="hero-sub">GRU regression on a 60,000-row industrial sensor stream, with drift detection and model adaptation</div></div>'
+    f'{badge}</div>', unsafe_allow_html=True)
 
 if not has_results:
     section("No results yet", "Open the sidebar and select <b>Run GRU experiment</b>, or run <code>python experiment.py</code> "
@@ -212,13 +247,13 @@ def bands(fig, row=None, labels=True):
         if labels:
             mid = a + (b - a) / 2
             fig.add_annotation(x=ts(mid), y=1, yref="paper", yanchor="top", text=REGIME_LABEL.get(regime, regime),
-                               showarrow=False, font=dict(size=10.5, color=MUTED))
+                               showarrow=False, font=dict(size=10.5, color="#b45309"))
 
 
 def alarm_lines(fig, row=None):
     kw = {} if row is None else {"row": row, "col": 1}
     for t in alarms["timestamp"]:
-        fig.add_vline(x=ts(t), line_width=1, line_color=INK, opacity=0.55, **kw)
+        fig.add_vline(x=ts(t), line_width=1, line_dash="dot", line_color=CRITICAL, opacity=0.7, **kw)
 
 
 def window_mae_cols():
@@ -242,7 +277,7 @@ with tab_over:
                 f'stroke-linecap="round"><circle cx="10" cy="10" r="8.5"/><path d="M10 5.5v5.5M10 14.2v.1"/></svg>')
         verdict = ("Detector caught every drift episode with no false alarms." if ok else
                    f"Detector caught {caught} of {total} drift episodes and raised {fp} false alarm{'s' if fp != 1 else ''}.")
-        st.markdown(f'<div class="verdict">{icon}<span>{verdict}</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="verdict {"ok" if ok else "bad"}">{icon}<span>{verdict}</span></div>', unsafe_allow_html=True)
         delay = s["Mean detection delay (windows)"]
         win_hours = int(cfg.get("window", 600))
         best = summary.iloc[0] if summary is not None and len(summary) else None
@@ -272,12 +307,12 @@ with tab_over:
                                  hovertext=mid_txt, hoverinfo="text", showlegend=False))
         return mids
 
-    mids = segments("True drift", [(a, b, f"{REGIME_LABEL.get(r, r)} drift") for a, b, r in BLOCKS], "rgba(82,81,78,0.35)", 16)
+    mids = segments("True drift", [(a, b, f"{REGIME_LABEL.get(r, r)} drift") for a, b, r in BLOCKS], "rgba(245,158,11,0.55)", 16)
     fig.add_trace(go.Scatter(x=mids, y=["True drift"] * len(mids), mode="text",
                              text=[REGIME_LABEL.get(r, r) for _, _, r in BLOCKS], textposition="top center",
                              textfont=dict(size=11, color=INK2), hoverinfo="skip", showlegend=False))
     fig.add_trace(go.Scatter(x=[ts(t) for t in alarms["timestamp"]], y=["Detector alarm"] * len(alarms), mode="markers",
-                             marker=dict(symbol="triangle-up", size=12, color=INK, line=dict(width=2, color=SURFACE)),
+                             marker=dict(symbol="triangle-up", size=12, color=CRITICAL, line=dict(width=2, color=SURFACE)),
                              hovertext=[f"Window {w}: {d} drift" for w, d in zip(alarms["window"], alarms["diagnosis"])],
                              hoverinfo="text", showlegend=False))
     ad = log[log["adapted"]]
@@ -288,7 +323,7 @@ with tab_over:
             a = g["timestamp"].iloc[0]
             b = row_ts.get(int(g["end"].iloc[-1]) - 1, g["timestamp"].iloc[-1])
             items.append((a, b, f"Adapting for {len(g)} windows"))
-        segments("Models adapting", items, "#2a78d6", 12)
+        segments("Models adapting", items, "#6366f1", 12)
     style(fig, height=230, legend=False)
     fig.update_layout(margin=dict(l=120, r=24, t=16, b=40))
     fig.update_yaxes(categoryorder="array", categoryarray=rows_order, showgrid=False, tickfont=dict(color=INK2, size=12))
@@ -348,7 +383,10 @@ with tab_model:
         section("Leaderboard", "Accuracy, how each model behaves around drift, and what its updates cost.")
         cols = ["Rank", "Strategy", "MAE", "RMSE", "R2", "MAE normal", "MAE stable", "MAE drift", "Gain vs Static, drift (%)",
                 "Updates", "Training samples", "Training time (s)"]
-        show_df(summary[[c for c in cols if c in summary]].round(2))
+        core = ["Rank", "Strategy", "MAE", "RMSE", "R2", "Gain vs Static, drift (%)", "Training time (s)"]
+        show_df(summary[[c for c in core if c in summary]].round(2))
+        with st.expander("Show all columns"):
+            show_df(summary[[c for c in cols if c in summary]].round(2))
 
         left, right = st.columns(2)
         with left:
@@ -359,7 +397,7 @@ with tab_model:
                 piv = piv[[c for c in ["stable", "data_drift", "relational_drift", "both"] if c in piv.columns]]
                 fig = go.Figure(go.Heatmap(
                     z=piv.values, x=[REGIME_LABEL.get(c, c) for c in piv.columns], y=piv.index, zmin=0,
-                    colorscale=[[0, "#cde2fb"], [0.5, "#3987e5"], [1, "#104281"]], showscale=False,
+                    colorscale=[[0, "#eef2ff"], [0.5, "#818cf8"], [1, "#3730a3"]], showscale=False,
                     text=np.round(piv.values, 1), texttemplate="%{text}", xgap=2, ygap=2,
                     textfont=dict(size=12), hovertemplate="%{y}, %{x}: %{z:.2f}<extra></extra>"))
                 style(fig, height=290, legend=False)
@@ -373,8 +411,7 @@ with tab_model:
                 fig = go.Figure()
                 for name in summary["Strategy"]:
                     d = recovery[recovery["Strategy"] == name]
-                    fig.add_trace(go.Bar(x=[f'{int(e)} {REGIME_LABEL.get(t.split("_")[0].title().lower(), t)}'
-                                            if False else f"Ep {int(e)}" for e in d["episode"]],
+                    fig.add_trace(go.Bar(x=[f"Ep {int(e)}" for e in d["episode"]],
                                          y=d["peak_mae"], name=name, marker_color=color_for(name),
                                          hovertemplate="%{x}: %{y:.2f}<extra>" + name + "</extra>"))
                 style(fig, height=290)
@@ -427,7 +464,7 @@ with tab_model:
                 d = merged[merged["regime"] == reg]["resid"]
                 if len(d):
                     fig.add_trace(go.Box(y=d, name=REGIME_LABEL[reg], boxpoints=False, line=dict(width=1.5, color=color_for(chosen)),
-                                         fillcolor=rgba(color_for(chosen).replace("#898781", "#52514e"), 0.18)))
+                                         fillcolor=rgba(color_for(chosen).replace("#94a3b8", "#64748b"), 0.18)))
             fig.add_hline(y=0, line_width=1, line_color=INK2)
             style(fig, height=360, legend=False)
             fig.update_yaxes(title="Error")
@@ -451,8 +488,8 @@ with tab_det:
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.09,
                         subplot_titles=("Sensors that moved (KS or PSI)", "Page-Hinkley statistic",
                                         "Mean residual of the frozen rule"))
-    line = dict(width=1.8, color="#2a78d6")
-    fig.add_trace(go.Scatter(x=log["timestamp"], y=log["n_moved"], mode="lines", line=dict(width=1.8, color="#2a78d6", shape="hv"),
+    line = dict(width=1.8, color="#6366f1")
+    fig.add_trace(go.Scatter(x=log["timestamp"], y=log["n_moved"], mode="lines", line=dict(width=1.8, color="#6366f1", shape="hv"),
                              name="Sensors moved", hovertemplate="%{y}<extra>Sensors moved</extra>"), row=1, col=1)
     fig.add_trace(go.Scatter(x=log["timestamp"], y=log["ph_stat"], mode="lines", line=line, name="Page-Hinkley",
                              hovertemplate="%{y:.1f}<extra>Page-Hinkley</extra>"), row=2, col=1)
@@ -460,7 +497,7 @@ with tab_det:
                              hovertemplate="%{y:.2f}<extra>Mean residual</extra>"), row=3, col=1)
     for r, (level, label) in enumerate([(DATA_MIN_FEATURES, "alarm level"), (PH_PARAMS["threshold"], "alarm level"),
                                         (RULE_BACK, "old rule works again below this")], start=1):
-        fig.add_hline(y=level, line_width=1, line_color=MUTED, row=r, col=1,
+        fig.add_hline(y=level, line_width=1, line_dash="dash", line_color=MUTED, row=r, col=1,
                       annotation_text=label, annotation_position="top left", annotation_font=dict(size=10.5, color=MUTED))
         bands(fig, row=r, labels=False)
         alarm_lines(fig, row=r)
@@ -471,8 +508,8 @@ with tab_det:
             a.update(x=0, xanchor="left", font=dict(size=13, color=INK))
     show_fig(fig)
 
-    section("Window by window")
-    show_df(log[["window", "timestamp", "diagnosis", "alarm", "recovery", "n_moved", "features_moved", "worst_ks",
+    with st.expander("Window-by-window detector log"):
+      show_df(log[["window", "timestamp", "diagnosis", "alarm", "recovery", "n_moved", "features_moved", "worst_ks",
                  "worst_psi", "ph_stat", "mean_resid"]].round(3))
 
 # ================================================================== Predictions
@@ -500,13 +537,29 @@ with tab_pred:
 with tab_ev:
     if types is not None:
         section("Drift episodes and what the detector said", "Compared against the ground-truth labels, which the live detector never sees.")
-        t = types.copy()
-        t["type_correct"] = np.where(t["type_correct"], "Yes", "No")
-        show_df(t.rename(columns={"episode": "Episode", "true_type": "True type", "detected_type": "Detected type",
-                                  "type_correct": "Type matched", "alarm_window": "Alarm window",
-                                  "episode_start_window": "Episode start", "episode_end_window": "Episode end",
-                                  "delay_windows": "Delay (windows)"}))
+        tt = types.copy()
+        tt["type_correct"] = np.where(tt["type_correct"], "\u2713 Yes", "\u2717 No")
+        show_df(tt.rename(columns={"episode": "Episode", "true_type": "True type", "detected_type": "Detected type",
+                                   "type_correct": "Type matched", "alarm_window": "Alarm window",
+                                   "episode_start_window": "Episode start", "episode_end_window": "Episode end",
+                                   "delay_windows": "Delay (windows)"}))
     if events is not None:
-        section("Alarms, recoveries and adaptation windows")
-        show_df(events[["window", "start", "end", "timestamp", "diagnosis", "alarm", "recovery", "adapted", "features_moved",
-                        "ph_stat"]].round(2))
+        section("Alarms, recoveries and adaptation windows", "One row per window where something happened.")
+        view = st.radio("Show", ["All", "Alarms", "Recoveries", "Adapting"], horizontal=True, label_visibility="collapsed")
+        ev = events.copy()
+        for c in ("alarm", "recovery", "adapted"):
+            ev[c] = ev[c].astype(str).str.lower().isin(["true", "1"])
+        keep = {"All": ev["alarm"] | ev["recovery"] | ev["adapted"], "Alarms": ev["alarm"],
+                "Recoveries": ev["recovery"], "Adapting": ev["adapted"]}[view]
+        ev = ev[keep]
+
+        def status(r):
+            parts = [n for n, f in (("Alarm", r["alarm"]), ("Recovery", r["recovery"]), ("Adapting", r["adapted"])) if f]
+            return " + ".join(parts) if parts else "-"
+
+        ev["Status"] = ev.apply(status, axis=1)
+        ev["features_moved"] = ev["features_moved"].fillna("-").replace("", "-")
+        out = ev[["window", "timestamp", "diagnosis", "Status", "features_moved", "ph_stat"]].rename(columns={
+            "window": "Window", "timestamp": "Date", "diagnosis": "Diagnosis",
+            "features_moved": "Sensors moved", "ph_stat": "PH statistic"}).round(2)
+        show_df(out, column_config={"Sensors moved": st.column_config.TextColumn(width="large")})
