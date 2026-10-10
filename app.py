@@ -31,7 +31,8 @@ DRIFT = "#f59e0b"
 BAND = "rgba(245,158,11,0.10)"
 FONT = '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif'
 # one fixed colour per strategy; Static is the neutral grey baseline
-STRATEGY_COLORS = [("static", "#94a3b8"), ("transfer", "#3b82f6"), ("full", "#f97316"),
+STRATEGY_COLORS = [("blend", "#0d9488"), ("transfer - frozen gru + rollback", "#0ea5e9"), ("rollback", "#d946ef"),
+                   ("static", "#94a3b8"), ("transfer", "#3b82f6"), ("full", "#f97316"),
                    ("replay 100", "#10b981"), ("replay 500", "#8b5cf6")]
 REGIME_LABEL = {"stable": "Stable", "data_drift": "Data", "relational_drift": "Relational", "both": "Both"}
 
@@ -386,8 +387,8 @@ with tab_over:
                                    marker_color=[color_for(n) for n in order["Strategy"]],
                                    text=[f"{v:.2f}" for v in order["MAE"]], textposition="outside", cliponaxis=False,
                                    hovertemplate="%{y}: %{x:.2f}<extra></extra>"))
-            style(fig, height=295, legend=False)
-            fig.update_layout(bargap=0.55, margin=dict(l=190, r=50, t=8, b=36))
+            style(fig, height=max(295, 52 * len(order) + 70), legend=False)
+            fig.update_layout(bargap=0.55, margin=dict(l=250, r=50, t=8, b=36))
             fig.update_xaxes(showgrid=True, gridcolor=GRID, title="MAE")
             fig.update_yaxes(showgrid=False, tickfont=dict(color=INK2))
             show_fig(fig)
@@ -451,8 +452,8 @@ with tab_model:
                     colorscale=[[0, "#eef2ff"], [0.5, "#818cf8"], [1, "#3730a3"]], showscale=False,
                     text=np.round(piv.values, 1), texttemplate="%{text}", xgap=2, ygap=2,
                     textfont=dict(size=14), hovertemplate="%{y}, %{x}: %{z:.2f}<extra></extra>"))
-                style(fig, height=342, legend=False)
-                fig.update_layout(margin=dict(l=180, r=12, t=8, b=36))
+                style(fig, height=max(342, 56 * len(piv) + 90), legend=False)
+                fig.update_layout(margin=dict(l=240, r=12, t=8, b=36))
                 fig.update_yaxes(autorange="reversed", showgrid=False, tickfont=dict(color=INK2))
                 fig.update_xaxes(side="top", tickfont=dict(color=INK2))
                 show_fig(fig)
@@ -484,6 +485,23 @@ with tab_model:
         fig.update_layout(hovermode="x unified")
         fig.update_yaxes(title="Window MAE", rangemode="tozero")
         show_fig(fig)
+
+        bw = read("blend_weights.csv")
+        if bw is not None and len(bw):
+            section("What the blend trusted", "Share of the blend's weight given to each model, window by window. "
+                                              "It shifts toward whichever model has been most accurate recently.")
+            xs = log.set_index("window")["timestamp"].reindex(bw["window"]).values
+            fig = go.Figure()
+            for c in [c for c in bw.columns if c != "window"]:
+                col = color_for(c)
+                fig.add_trace(go.Scatter(x=xs, y=bw[c] * 100, name=c, mode="lines", stackgroup="w",
+                                         line=dict(width=0.6, color=col, shape="hv"), fillcolor=rgba(col, 0.78),
+                                         hovertemplate="%{y:.0f}%<extra>" + c + "</extra>"))
+            bands(fig)
+            style(fig, height=400)
+            fig.update_layout(hovermode="x unified")
+            fig.update_yaxes(title="Weight (%)", range=[0, 100])
+            show_fig(fig)
 
         left, right = st.columns(2)
         merged = pred[["row", "actual", chosen]].copy()
@@ -660,7 +678,7 @@ with tab_det:
 with tab_pred:
     c1, c2 = st.columns([1, 3])
     res = c1.radio("Resolution", ["Daily mean", "Hourly"], horizontal=True)
-    chosen_cols = c2.multiselect("Models", strategy_cols, default=strategy_cols)
+    chosen_cols = c2.multiselect("Models", strategy_cols, default=[c for c in strategy_cols if "rollback" not in c.lower()])
     d = pred.set_index("timestamp")[["actual"] + chosen_cols]
     d = d.resample("D").mean() if res == "Daily mean" else d.iloc[:: max(1, len(d) // 6000)]
     fig = go.Figure()
