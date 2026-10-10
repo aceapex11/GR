@@ -47,6 +47,10 @@ class GRUConfig:
     blend: bool = True                 # add the error-weighted blend of all other strategies
     blend_decay: float = 0.3           # memory of the blend's error average (0 = only the last window; higher = slower)
     blend_power: float = 6.0           # higher = the blend leans harder on the currently best model
+    huber_beta: float = 0.5            # Huber loss (in target std units): robust to outliers; 0 = plain MSE
+    hard_drift_mult: float = 1.5       # relational / both drift: this many times more epochs per update
+    adapt_until_recovery: bool = True  # keep adapting while drift is active, not just 3 windows
+    max_adapt_windows: int = 12        # safety cap for the above
 
     @classmethod
     def fast(cls):
@@ -65,7 +69,7 @@ class GRURegressor(nn.Module):
         return self.head(out[:, -1]).squeeze(-1)
 
 
-def fit(model, data, idx, epochs, lr, batch, params=None, seed=0):
+def fit(model, data, idx, epochs, lr, batch, params=None, seed=0, huber_beta=0.0):
     """Mini-batch Adam on the sequences that end at rows `idx` (scaled target)."""
     idx = np.asarray(idx)
     if len(idx) == 0 or epochs <= 0:
@@ -81,7 +85,10 @@ def fit(model, data, idx, epochs, lr, batch, params=None, seed=0):
         for s in range(0, len(order), batch):
             b = order[s:s + batch]
             opt.zero_grad()
-            F.mse_loss(model(xs[b]), ys[b]).backward()
+            out = model(xs[b])
+            loss = F.smooth_l1_loss(out, ys[b], beta=huber_beta) if huber_beta and huber_beta > 0 \
+                else F.mse_loss(out, ys[b])
+            loss.backward()
             opt.step()
 
 
@@ -89,7 +96,8 @@ def train_base(data, cfg, seed=0):
     """Pre-train the GRU on the normal history only (rows before train_end)."""
     torch.manual_seed(seed)
     model = GRURegressor(len(data.features), cfg.hidden)
-    fit(model, data, np.arange(data.train_end), cfg.base_epochs, cfg.base_lr, cfg.batch, seed=seed)
+    fit(model, data, np.arange(data.train_end), cfg.base_epochs, cfg.base_lr, cfg.batch, seed=seed,
+        huber_beta=cfg.huber_beta)
     return model
 
 
@@ -126,8 +134,14 @@ class _Strategy:
         self.model = copy.deepcopy(base)
         self.base_state = copy.deepcopy(base.state_dict())   # original weights, kept for rollback
         self.rollback_on_recovery = False
+        self.diagnosis = "none"          # set by the engine before every update
         self.n_updates = 0
         self.n_rollbacks = 0
+
+    def _epochs(self, base_epochs):
+        """More epochs when the relationship itself has changed (relational or both)."""
+        hard = self.diagnosis in ("relational", "both")
+        return max(1, int(round(base_epochs * (self.cfg.hard_drift_mult if hard else 1.0))))
 
     @torch.no_grad()
     def predict(self, idx):
@@ -166,8 +180,8 @@ class TransferFrozen(_Strategy):
 
     def _update(self, idx):
         c = self.cfg
-        fit(self.model, self.d, idx, c.transfer_epochs, c.transfer_lr, c.batch,
-            params=self.model.head.parameters(), seed=self.seed + self.n_updates)
+        fit(self.model, self.d, idx, self._epochs(c.transfer_epochs), c.transfer_lr, c.batch,
+            params=self.model.head.parameters(), seed=self.seed + self.n_updates, huber_beta=c.huber_beta)
         return len(idx)
 
 
@@ -180,7 +194,8 @@ class FullRetrain(_Strategy):
                            .choice(hist, c.full_cap, replace=False))
         torch.manual_seed(self.seed + 1000 + self.n_updates)
         self.model = GRURegressor(len(self.d.features), c.hidden)
-        fit(self.model, self.d, hist, c.full_epochs, c.base_lr, c.batch, seed=self.seed + self.n_updates)
+        fit(self.model, self.d, hist, c.full_epochs, c.base_lr, c.batch, seed=self.seed + self.n_updates,
+            huber_beta=c.huber_beta)
         return len(hist)
 
 
@@ -195,8 +210,8 @@ class Replay(_Strategy):
         c = self.cfg
         old = self.mem.sample(self.k)
         train_idx = np.concatenate([idx, old]) if len(old) else idx
-        fit(self.model, self.d, train_idx, c.replay_epochs, c.replay_lr, c.batch,
-            seed=self.seed + self.n_updates)
+        fit(self.model, self.d, train_idx, self._epochs(c.replay_epochs), c.replay_lr, c.batch,
+            seed=self.seed + self.n_updates, huber_beta=c.huber_beta)
         self.mem.add(idx)
         return len(train_idx)
 
@@ -214,6 +229,7 @@ class Blend(_Strategy):
         self.name, self.d, self.cfg, self.seed = name, data, cfg, int(seed)
         self.members = list(members)
         self.rollback_on_recovery = False
+        self.diagnosis = "none"
         self.n_updates = 0
         self.n_rollbacks = 0
         self.ema = None
