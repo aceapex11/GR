@@ -6,6 +6,12 @@ The engine is model-agnostic.  A *strategy* is any object with
     predict(idx: np.ndarray) -> np.ndarray   # predictions on the raw target scale
     update(idx: np.ndarray) -> int           # learn from rows `idx` (labels now revealed)
 
+and, optionally,
+
+    observe(idx, y_true)    # called after every window's predictions (used by the blend)
+    rollback()              # called when the detector reports recovery, if
+                            # strategy.rollback_on_recovery is True
+
 so the same loop runs the GRU strategies (gru_models.py) or any stand-in.
 """
 import numpy as np
@@ -70,9 +76,22 @@ class StreamRunner:
                 pred[s.name][idx] = p
                 row[f"mae[{s.name}]"] = float(np.mean(np.abs(p - d.yraw[idx])))
 
+            # labels for this window are now known: let strategies that track their own error look at them
+            for s in self.strategies:
+                if hasattr(s, "observe"):
+                    s.observe(idx, d.yraw[idx])
+
             # 2) detect (sensors + frozen-rule residual only)
             det = self.detector.update(d.X[idx], d.y[idx])
             row.update(det)
+
+            # 2b) recovery: the original behaviour is valid again, so roll back the strategies that opted in
+            rolled = bool(det.get("recovery"))
+            if rolled:
+                for s in self.strategies:
+                    if getattr(s, "rollback_on_recovery", False):
+                        s.rollback()
+            row["rolled_back"] = rolled
 
             # 3) adapt every strategy on the same schedule
             if det["alarm"]:
@@ -80,6 +99,8 @@ class StreamRunner:
             row["adapted"] = active > 0
             if active > 0:
                 for s in self.strategies:
+                    if rolled and getattr(s, "rollback_on_recovery", False):
+                        continue          # just restored: don't immediately adapt it away again
                     s.update(idx)
                 active -= 1
 
