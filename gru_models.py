@@ -1,13 +1,20 @@
-"""PyTorch GRU regressor and the five adaptation strategies.
+"""PyTorch GRU regressor and the adaptation strategies.
 
 All strategies start from the SAME pre-trained GRU and receive the SAME adaptation
 schedule from the detector (see engine.py), so differences in error come from the
 adaptation method only.
 
-  Static                 frozen baseline
-  Transfer - frozen GRU  recurrent layer frozen, only the regression head is re-trained
-  Full retraining        brand-new GRU trained on all labelled history so far
-  Continual + replay K   fine-tune the current GRU on the new window + K replayed old rows
+  Static                      frozen baseline
+  Transfer - frozen GRU       recurrent layer frozen, only the regression head is re-trained
+  Full retraining             brand-new GRU trained on all labelled history so far
+  Continual + replay K        fine-tune the current GRU on the new window + K replayed old rows
+
+Improvements added on top of the original five:
+  * Output clipping           every prediction is clipped to the valid target range (cfg.clip_range)
+  * "... + rollback" variants when the detector says the old behaviour is back (recovery flag),
+                              the model returns to the original pre-trained weights
+  * "Blend (error-weighted)"  averages all other strategies, trusting each in proportion to how
+                              well it did on recent windows
 """
 import copy
 from dataclasses import dataclass
@@ -35,6 +42,11 @@ class GRUConfig:
     buffer_cap: int = 2000
     full_epochs: int = 15
     full_cap: int = 20000        # max rows used by one full retraining (uniform subsample of all history)
+    clip_range: tuple = (0.0, 100.0)   # valid range of the target; set to None to disable clipping
+    rollback_variants: bool = True     # add "+ rollback" copies of Transfer and Replay 500
+    blend: bool = True                 # add the error-weighted blend of all other strategies
+    blend_decay: float = 0.3           # memory of the blend's error average (0 = only the last window; higher = slower)
+    blend_power: float = 6.0           # higher = the blend leans harder on the currently best model
 
     @classmethod
     def fast(cls):
@@ -112,7 +124,10 @@ class _Strategy:
     def __init__(self, name, base, data, cfg, seed=0):
         self.name, self.d, self.cfg, self.seed = name, data, cfg, int(seed)
         self.model = copy.deepcopy(base)
+        self.base_state = copy.deepcopy(base.state_dict())   # original weights, kept for rollback
+        self.rollback_on_recovery = False
         self.n_updates = 0
+        self.n_rollbacks = 0
 
     @torch.no_grad()
     def predict(self, idx):
@@ -121,7 +136,10 @@ class _Strategy:
         for s in range(0, len(idx), 2048):
             x = torch.from_numpy(self.d.seq(np.asarray(idx)[s:s + 2048]).astype(np.float32))
             out.append(self.model(x).numpy())
-        return np.concatenate(out) * self.d.y_sd + self.d.y_mu
+        p = np.concatenate(out) * self.d.y_sd + self.d.y_mu
+        if self.cfg.clip_range is not None:
+            p = np.clip(p, self.cfg.clip_range[0], self.cfg.clip_range[1])
+        return p
 
     def update(self, idx):
         self.n_updates += 1
@@ -129,6 +147,11 @@ class _Strategy:
 
     def _update(self, idx):
         return 0
+
+    def rollback(self):
+        """Return to the original pre-trained weights (the old behaviour is valid again)."""
+        self.model.load_state_dict(self.base_state)
+        self.n_rollbacks += 1
 
 
 class Static(_Strategy):
@@ -178,6 +201,51 @@ class Replay(_Strategy):
         return len(train_idx)
 
 
+class Blend(_Strategy):
+    """Error-weighted average of other strategies.
+
+    After every window (labels revealed, same as the detector) each member's MAE is folded into a
+    running average. The next window's prediction weights members by 1 / error^power, so the blend
+    follows whichever model is currently doing best, without needing to know the drift type.
+    It never trains anything itself; the members are adapted by the engine as usual.
+    """
+
+    def __init__(self, name, members, data, cfg, seed=0):
+        self.name, self.d, self.cfg, self.seed = name, data, cfg, int(seed)
+        self.members = list(members)
+        self.rollback_on_recovery = False
+        self.n_updates = 0
+        self.n_rollbacks = 0
+        self.ema = None
+        self.weight_history = []          # one row per window: the weights used for that window
+        self._w = np.full(len(self.members), 1.0 / len(self.members))
+
+    def weights(self):
+        if self.ema is None:
+            return np.full(len(self.members), 1.0 / len(self.members))
+        w = np.maximum(self.ema, 1e-6) ** (-self.cfg.blend_power)
+        return w / w.sum()
+
+    def predict(self, idx):
+        self._w = self.weights()
+        preds = np.stack([np.asarray(m.predict(idx), float) for m in self.members])
+        return self._w @ preds
+
+    def observe(self, idx, y_true):
+        """Called by the engine after each window's predictions, before any adaptation."""
+        err = np.array([float(np.mean(np.abs(np.asarray(m.predict(idx), float) - y_true))) for m in self.members])
+        dcy = self.cfg.blend_decay
+        self.ema = err if self.ema is None else dcy * self.ema + (1 - dcy) * err
+        self.weight_history.append({"window": len(self.weight_history),
+                                    **{m.name: float(w) for m, w in zip(self.members, self._w)}})
+
+    def update(self, idx):
+        return 0
+
+    def rollback(self):
+        pass
+
+
 def build_strategies(data, cfg, seed=0, base=None):
     base = base if base is not None else train_base(data, cfg, seed)
     out = [
@@ -186,4 +254,15 @@ def build_strategies(data, cfg, seed=0, base=None):
         FullRetrain("Full retraining", base, data, cfg, seed),
     ]
     out += [Replay(f"Continual + replay {k}", base, data, cfg, k, seed) for k in cfg.replay_sizes]
+
+    if cfg.rollback_variants:
+        tr = TransferFrozen("Transfer - frozen GRU + rollback", base, data, cfg, seed)
+        tr.rollback_on_recovery = True
+        k = max(cfg.replay_sizes)
+        rp = Replay(f"Continual + replay {k} + rollback", base, data, cfg, k, seed)
+        rp.rollback_on_recovery = True
+        out += [tr, rp]
+
+    if cfg.blend:
+        out.append(Blend("Blend (error-weighted)", list(out), data, cfg, seed))
     return out
