@@ -69,6 +69,7 @@ st.set_page_config(page_title="Drift monitor", page_icon=None, layout="wide",
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+html { font-size: 18px; }
 html, body, .stApp { font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
 .stApp :is(p, label, button, input, textarea, h1, h2, h3, h4, li, a, td, th, div),
 .stApp span:not([data-testid="stIconMaterial"]) { font-family: inherit; }
@@ -78,14 +79,14 @@ html, body, .stApp { font-family: "Inter", system-ui, -apple-system, "Segoe UI",
 .stApp { background: #f5f6fb; color: #0f172a; }
 #MainMenu, footer { visibility: hidden; }
 header[data-testid="stHeader"] { background: transparent; }
-.block-container { max-width: 1280px; padding-top: 1.6rem; padding-bottom: 4rem; }
+.block-container { max-width: 1500px; padding-top: 1.6rem; padding-bottom: 4rem; }
 h1, h2, h3, h4 { letter-spacing: -0.01em; color: #0f172a; }
 
 .hero { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;
         padding: 28px 32px; border-radius: 20px; color: #fff;
         background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 55%, #3b82f6 100%);
         box-shadow: 0 10px 30px rgba(79,70,229,.25); }
-.hero-title { font-size: 1.9rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; color: #fff; }
+.hero-title { font-size: 2.2rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; color: #fff; }
 .hero-sub { font-size: .95rem; color: rgba(255,255,255,.85); margin-top: .35rem; max-width: 62ch; }
 .hero-badge { font-size: .8rem; font-weight: 500; color: #fff; padding: 7px 14px; border-radius: 999px;
               background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35); }
@@ -100,7 +101,7 @@ h1, h2, h3, h4 { letter-spacing: -0.01em; color: #0f172a; }
 .kpi { background: #fff; border: 1px solid #e5e8f0; border-radius: 16px; padding: 16px 18px;
        box-shadow: 0 1px 2px rgba(15,23,42,.04); }
 .kpi-label { font-size: .74rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
-.kpi-value { font-size: 1.7rem; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; color: #0f172a; }
+.kpi-value { font-size: 1.9rem; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; color: #0f172a; }
 .kpi-note { font-size: .78rem; color: #94a3b8; }
 
 .sec { font-size: 1.08rem; font-weight: 600; margin: 2rem 0 .15rem; color: #0f172a; }
@@ -108,11 +109,13 @@ h1, h2, h3, h4 { letter-spacing: -0.01em; color: #0f172a; }
 .takeaway { font-size: .93rem; color: #0f172a; margin: .5rem 0; padding: 12px 14px; background: #fff;
             border: 1px solid #e5e8f0; border-left: 3px solid #4f46e5; border-radius: 10px; max-width: 75ch; }
 
-/* tabs as a pill switcher */
-div[data-baseweb="tab-list"] { gap: 4px; background: #e9ebf4; padding: 4px; border-radius: 12px; width: fit-content; }
-button[data-baseweb="tab"] { height: auto; padding: 8px 16px; margin: 0; border-radius: 9px; font-size: .9rem; font-weight: 500; color: #475569; }
-button[data-baseweb="tab"][aria-selected="true"] { background: #fff; color: #4f46e5; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
-div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { display: none; }
+/* tabs as a pill switcher (selectors cover old and new Streamlit versions) */
+[role="tablist"] { gap: 4px; background: #e9ebf4; padding: 4px; border-radius: 12px; width: fit-content; border-bottom: none !important; }
+button[role="tab"] { height: auto; padding: 8px 18px; margin: 0; border-radius: 9px; }
+button[role="tab"], button[role="tab"] p { font-size: .95rem; font-weight: 500; color: #475569 !important; }
+button[role="tab"][aria-selected="true"] { background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+button[role="tab"][aria-selected="true"], button[role="tab"][aria-selected="true"] p { color: #4f46e5 !important; }
+[data-baseweb="tab-highlight"], [data-baseweb="tab-border"] { display: none !important; }
 
 /* charts and tables as cards */
 [data-testid="stPlotlyChart"] { background: #fff; border: 1px solid #e5e8f0; border-radius: 16px; padding: 10px 8px;
@@ -157,13 +160,13 @@ def kpi_strip(items):
     st.markdown(f'<div class="kpi-strip">{cells}</div>', unsafe_allow_html=True)
 
 
-def style(fig, height=380, legend=True):
+def style(fig, height=531, legend=True):
     fig.update_layout(
         height=height, paper_bgcolor=SURFACE, plot_bgcolor=SURFACE, showlegend=legend,
-        font=dict(family=FONT, size=12, color=INK2), margin=dict(l=56, r=24, t=40, b=44),
+        font=dict(family=FONT, size=14, color=INK2), margin=dict(l=56, r=24, t=40, b=44),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-                    bgcolor="rgba(0,0,0,0)", font=dict(size=12, color=INK2)),
-        hoverlabel=dict(bgcolor="#ffffff", bordercolor=BORDER, font=dict(family=FONT, size=12, color=INK)))
+                    bgcolor="rgba(0,0,0,0)", font=dict(size=14, color=INK2)),
+        hoverlabel=dict(bgcolor="#ffffff", bordercolor=BORDER, font=dict(family=FONT, size=13, color=INK)))
     fig.update_xaxes(showgrid=False, zeroline=False, linecolor=AXIS, ticks="outside", tickcolor=AXIS,
                      tickfont=dict(color=MUTED), title_font=dict(color=INK2))
     fig.update_yaxes(gridcolor=GRID, gridwidth=1, zeroline=False, linecolor="rgba(0,0,0,0)",
@@ -189,14 +192,20 @@ with st.sidebar:
     full_training = st.checkbox("Full training (slower)", value=False)
     if wide(st.button, "Run GRU experiment", type="primary"):
         cmd = [sys.executable, str(ROOT / "experiment.py")] + (["--full"] if full_training else [])
-        with st.spinner("Running. This can take several minutes."):
-            r = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=7200)
-        if r.returncode == 0:
-            st.success("Finished.")
+        try:
+            with st.spinner("Running. This can take several minutes."):
+                r = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=7200)
+            out_text, ok_run = (r.stderr or "") + "\n" + (r.stdout or ""), r.returncode == 0
+        except subprocess.TimeoutExpired:
+            out_text, ok_run = "The run took longer than 2 hours and was stopped.", False
+        except Exception as exc:
+            out_text, ok_run = f"Could not start the experiment: {exc}", False
+        if ok_run:
+            st.session_state.pop("run_error", None)
+            st.rerun()
         else:
-            st.error("The experiment failed. Details below.")
-            st.code((r.stderr + r.stdout)[-6000:])
-        st.rerun()
+            st.session_state["run_error"] = out_text.strip()[-8000:]
+            st.error("The run failed. The reason is shown on the main page.")
 
 meta = ""
 if cfg:
@@ -206,6 +215,19 @@ st.markdown(
     f'<div class="hero"><div><div class="hero-title">Drift monitor</div>'
     f'<div class="hero-sub">GRU regression on a 60,000-row industrial sensor stream, with drift detection and model adaptation</div></div>'
     f'{badge}</div>', unsafe_allow_html=True)
+
+if st.session_state.get("run_error"):
+    _msg = st.session_state["run_error"]
+    _lines = [l for l in _msg.splitlines() if l.strip()]
+    st.error("The experiment failed: " + (_lines[-1] if _lines else "no output was captured"))
+    with st.expander("Full error output", expanded=True):
+        try:
+            st.code(_msg, language="text", wrap_lines=True)
+        except TypeError:
+            st.code(_msg, language="text")
+    if st.button("Dismiss error"):
+        st.session_state.pop("run_error", None)
+        st.rerun()
 
 if not has_results:
     section("No results yet", "Open the sidebar and select <b>Run GRU experiment</b>, or run <code>python experiment.py</code> "
@@ -219,6 +241,17 @@ summary, recovery, events = read("performance_summary.csv"), read("episode_recov
 log["timestamp"] = pd.to_datetime(log["timestamp"])
 pred["timestamp"] = pd.to_datetime(pred["timestamp"])
 strategy_cols = [c for c in pred.columns if c not in ("row", "timestamp", "actual")]
+summary_is_fallback = False
+if summary is None and strategy_cols:
+    _ss_tot = float(((pred["actual"] - pred["actual"].mean()) ** 2).sum())
+    _rows = []
+    for _c in strategy_cols:
+        _e = pred[_c] - pred["actual"]
+        _rows.append({"Strategy": _c, "MAE": float(_e.abs().mean()), "RMSE": float(np.sqrt((_e ** 2).mean())),
+                      "R2": 1 - float((_e ** 2).sum()) / _ss_tot if _ss_tot else np.nan})
+    summary = pd.DataFrame(_rows).sort_values("MAE").reset_index(drop=True)
+    summary.insert(0, "Rank", range(1, len(summary) + 1))
+    summary_is_fallback = True
 alarms = log[log["alarm"]]
 row_ts = None
 if truth is not None:
@@ -247,7 +280,7 @@ def bands(fig, row=None, labels=True):
         if labels:
             mid = a + (b - a) / 2
             fig.add_annotation(x=ts(mid), y=1, yref="paper", yanchor="top", text=REGIME_LABEL.get(regime, regime),
-                               showarrow=False, font=dict(size=10.5, color="#b45309"))
+                               showarrow=False, font=dict(size=12.5, color="#b45309"))
 
 
 def alarm_lines(fig, row=None):
@@ -261,8 +294,8 @@ def window_mae_cols():
 
 
 # ------------------------------------------------------------------ tabs
-tab_over, tab_model, tab_det, tab_pred, tab_ev = st.tabs(
-    ["Overview", "Model performance", "Detector", "Predictions", "Events"])
+tab_over, tab_model, tab_err, tab_det, tab_pred, tab_ev = st.tabs(
+    ["Overview", "Model performance", "Error inspector", "Detector", "Predictions", "Events"])
 
 # ================================================================== Overview
 with tab_over:
@@ -310,7 +343,7 @@ with tab_over:
     mids = segments("True drift", [(a, b, f"{REGIME_LABEL.get(r, r)} drift") for a, b, r in BLOCKS], "rgba(245,158,11,0.55)", 16)
     fig.add_trace(go.Scatter(x=mids, y=["True drift"] * len(mids), mode="text",
                              text=[REGIME_LABEL.get(r, r) for _, _, r in BLOCKS], textposition="top center",
-                             textfont=dict(size=11, color=INK2), hoverinfo="skip", showlegend=False))
+                             textfont=dict(size=13, color=INK2), hoverinfo="skip", showlegend=False))
     fig.add_trace(go.Scatter(x=[ts(t) for t in alarms["timestamp"]], y=["Detector alarm"] * len(alarms), mode="markers",
                              marker=dict(symbol="triangle-up", size=12, color=CRITICAL, line=dict(width=2, color=SURFACE)),
                              hovertext=[f"Window {w}: {d} drift" for w, d in zip(alarms["window"], alarms["diagnosis"])],
@@ -324,9 +357,9 @@ with tab_over:
             b = row_ts.get(int(g["end"].iloc[-1]) - 1, g["timestamp"].iloc[-1])
             items.append((a, b, f"Adapting for {len(g)} windows"))
         segments("Models adapting", items, "#6366f1", 12)
-    style(fig, height=230, legend=False)
-    fig.update_layout(margin=dict(l=120, r=24, t=16, b=40))
-    fig.update_yaxes(categoryorder="array", categoryarray=rows_order, showgrid=False, tickfont=dict(color=INK2, size=12))
+    style(fig, height=271, legend=False)
+    fig.update_layout(margin=dict(l=150, r=24, t=16, b=40))
+    fig.update_yaxes(categoryorder="array", categoryarray=rows_order, showgrid=False, tickfont=dict(color=INK2, size=14))
     fig.update_xaxes(showgrid=True, gridcolor=GRID)
     show_fig(fig)
 
@@ -339,8 +372,8 @@ with tab_over:
                                    marker_color=[color_for(n) for n in order["Strategy"]],
                                    text=[f"{v:.2f}" for v in order["MAE"]], textposition="outside", cliponaxis=False,
                                    hovertemplate="%{y}: %{x:.2f}<extra></extra>"))
-            style(fig, height=250, legend=False)
-            fig.update_layout(bargap=0.55, margin=dict(l=160, r=40, t=8, b=36))
+            style(fig, height=295, legend=False)
+            fig.update_layout(bargap=0.55, margin=dict(l=190, r=50, t=8, b=36))
             fig.update_xaxes(showgrid=True, gridcolor=GRID, title="MAE")
             fig.update_yaxes(showgrid=False, tickfont=dict(color=INK2))
             show_fig(fig)
@@ -369,6 +402,9 @@ with tab_model:
     if summary is None:
         st.info("This tab needs performance_summary.csv. Run the experiment again to create it.")
     else:
+        if summary_is_fallback:
+            st.info("performance_summary.csv is missing, so basic scores (MAE, RMSE, R squared) are calculated "
+                    "directly from predictions.csv. Run the experiment to get the full leaderboard.")
         chosen = st.selectbox("Model", summary["Strategy"].tolist(), index=0)
         r0 = summary[summary["Strategy"] == chosen].iloc[0]
         gain = r0.get("Gain vs Static, drift (%)", np.nan)
@@ -376,7 +412,8 @@ with tab_model:
             ("MAE", f'{r0["MAE"]:.2f}', "average absolute error"),
             ("RMSE", f'{r0["RMSE"]:.2f}', "penalises large misses"),
             ("R squared", f'{r0["R2"]:.3f}', "share of variance explained"),
-            ("Error during drift", f'{r0["Drift error (x normal)"]:.2f}x', "relative to pre-drift error"),
+            ("Error during drift", "n/a" if pd.isna(r0.get("Drift error (x normal)", np.nan)) else f'{r0["Drift error (x normal)"]:.2f}x',
+             "relative to pre-drift error"),
             ("Gain vs Static in drift", "n/a" if pd.isna(gain) else f"{gain:+.0f}%", "negative means worse"),
         ])
 
@@ -399,9 +436,9 @@ with tab_model:
                     z=piv.values, x=[REGIME_LABEL.get(c, c) for c in piv.columns], y=piv.index, zmin=0,
                     colorscale=[[0, "#eef2ff"], [0.5, "#818cf8"], [1, "#3730a3"]], showscale=False,
                     text=np.round(piv.values, 1), texttemplate="%{text}", xgap=2, ygap=2,
-                    textfont=dict(size=12), hovertemplate="%{y}, %{x}: %{z:.2f}<extra></extra>"))
-                style(fig, height=290, legend=False)
-                fig.update_layout(margin=dict(l=150, r=12, t=8, b=36))
+                    textfont=dict(size=14), hovertemplate="%{y}, %{x}: %{z:.2f}<extra></extra>"))
+                style(fig, height=342, legend=False)
+                fig.update_layout(margin=dict(l=180, r=12, t=8, b=36))
                 fig.update_yaxes(autorange="reversed", showgrid=False, tickfont=dict(color=INK2))
                 fig.update_xaxes(side="top", tickfont=dict(color=INK2))
                 show_fig(fig)
@@ -414,7 +451,7 @@ with tab_model:
                     fig.add_trace(go.Bar(x=[f"Ep {int(e)}" for e in d["episode"]],
                                          y=d["peak_mae"], name=name, marker_color=color_for(name),
                                          hovertemplate="%{x}: %{y:.2f}<extra>" + name + "</extra>"))
-                style(fig, height=290)
+                style(fig, height=342)
                 fig.update_layout(barmode="group", bargap=0.35, bargroupgap=0.06, margin=dict(l=56, r=12, t=40, b=36))
                 fig.update_yaxes(title="Peak window MAE")
                 show_fig(fig)
@@ -429,7 +466,7 @@ with tab_model:
                                      opacity=1 if on else 0.65, hovertemplate="%{y:.2f}<extra>" + name + "</extra>"))
         bands(fig)
         alarm_lines(fig)
-        style(fig, height=380)
+        style(fig, height=448)
         fig.update_layout(hovermode="x unified")
         fig.update_yaxes(title="Window MAE", rangemode="tozero")
         show_fig(fig)
@@ -453,7 +490,7 @@ with tab_model:
                                      marker=dict(size=5, color=color_for(chosen), opacity=0.55, line=dict(width=0))))
             fig.add_trace(go.Scatter(x=[lo, hi], y=[lo, hi], mode="lines", name="Perfect prediction",
                                      line=dict(width=1, color=INK2)))
-            style(fig, height=360)
+            style(fig, height=425)
             fig.update_xaxes(title="Actual", showgrid=True, gridcolor=GRID)
             fig.update_yaxes(title="Predicted")
             show_fig(fig)
@@ -466,7 +503,7 @@ with tab_model:
                     fig.add_trace(go.Box(y=d, name=REGIME_LABEL[reg], boxpoints=False, line=dict(width=1.5, color=color_for(chosen)),
                                          fillcolor=rgba(color_for(chosen).replace("#94a3b8", "#64748b"), 0.18)))
             fig.add_hline(y=0, line_width=1, line_color=INK2)
-            style(fig, height=360, legend=False)
+            style(fig, height=425, legend=False)
             fig.update_yaxes(title="Error")
             fig.update_xaxes(showgrid=False)
             show_fig(fig)
@@ -479,6 +516,99 @@ with tab_model:
             tbl = rec.pivot(index="Episode", columns="Strategy", values="windows_to_recover")
             tbl = tbl[[n for n in summary["Strategy"] if n in tbl.columns]]
             show_df(tbl.fillna(-1).astype(int).astype(str).replace("-1", "-").reset_index())
+
+# ================================================================== Error inspector
+with tab_err:
+    section("Where does the model miss?",
+            "Pick a model and an error limit. Every row where predicted and actual differ by more than the limit is flagged in red.")
+    c1, c2, c3 = st.columns([1.1, 1.4, 2])
+    insp = c1.selectbox("Model", strategy_cols, key="insp_model")
+    mae_all = float((pred[insp] - pred["actual"]).abs().mean())
+    mode = c2.radio("Limit", ["Multiple of MAE", "Fixed value"], horizontal=True, key="insp_mode")
+    if mode == "Multiple of MAE":
+        k = c2.slider("Times the MAE", 0.5, 6.0, 1.0, 0.25, key="insp_k")
+        limit = k * mae_all
+    else:
+        limit = float(c2.number_input("Error limit", min_value=0.0, value=round(mae_all, 2), step=0.5, key="insp_fixed"))
+    t0, t1 = pred["timestamp"].min().to_pydatetime(), pred["timestamp"].max().to_pydatetime()
+    lo_t, hi_t = c3.slider("Time range", min_value=t0, max_value=t1, value=(t0, t1), format="YYYY-MM-DD", key="insp_range")
+
+    df = pred[["row", "timestamp", "actual", insp]].rename(columns={insp: "predicted"})
+    df["error"] = df["predicted"] - df["actual"]
+    df["abs_error"] = df["error"].abs()
+    if truth is not None:
+        df = df.merge(truth[["row", "regime"]], on="row", how="left")
+    else:
+        df["regime"] = "stable"
+    df = df[(df["timestamp"] >= lo_t) & (df["timestamp"] <= hi_t)]
+    df["over"] = df["abs_error"] > limit
+    n, n_over = len(df), int(df["over"].sum())
+
+    kpi_strip([
+        ("Overall MAE", f"{mae_all:.2f}", f"{insp}, whole stream"),
+        ("Error limit", f"{limit:.2f}", "flag rows above this"),
+        ("Rows over the limit", f"{n_over:,}", f"of {n:,} in range"),
+        ("Share over the limit", f"{(100 * n_over / n if n else 0):.1f}%", "of rows in range"),
+        ("Largest miss", f"{(df['abs_error'].max() if n else 0):.2f}", "absolute error"),
+    ])
+
+    section("Actual against predicted over time", "Red dots are rows that miss by more than the limit. Shaded bands are true drift periods.")
+    step = max(1, n // 6000)
+    line_d = df.iloc[::step]
+    flagged = df[df["over"]]
+    if len(flagged) > 3000:
+        flagged = flagged.nlargest(3000, "abs_error")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=line_d["timestamp"], y=line_d["actual"], name="Actual", mode="lines",
+                             line=dict(width=2, color=INK), hovertemplate="%{y:.1f}<extra>Actual</extra>"))
+    fig.add_trace(go.Scatter(x=line_d["timestamp"], y=line_d["predicted"], name=f"Predicted ({insp})", mode="lines",
+                             line=dict(width=1.6, color=color_for(insp)), hovertemplate="%{y:.1f}<extra>Predicted</extra>"))
+    fig.add_trace(go.Scatter(x=flagged["timestamp"], y=flagged["predicted"], name="Over the limit", mode="markers",
+                             marker=dict(size=6, color=CRITICAL, opacity=0.7),
+                             customdata=flagged[["actual", "error"]].values,
+                             hovertemplate="Predicted %{y:.1f}, actual %{customdata[0]:.1f}, error %{customdata[1]:+.1f}<extra>Over limit</extra>"))
+    bands(fig)
+    style(fig, height=500)
+    fig.update_layout(hovermode="x unified")
+    fig.update_yaxes(title="Health deterioration")
+    show_fig(fig)
+    if len(flagged) < n_over:
+        st.caption(f"Showing the {len(flagged):,} largest of {n_over:,} flagged rows to keep the chart responsive.")
+
+    left, right = st.columns(2)
+    with left:
+        section("Share of rows over the limit, by regime", "Which kinds of period the model struggles in.")
+        order = [r for r in ["stable", "data_drift", "relational_drift", "both"] if r in set(df["regime"].dropna())]
+        if order:
+            share = [100 * df.loc[df["regime"] == r, "over"].mean() for r in order]
+            fig = go.Figure(go.Bar(x=[REGIME_LABEL.get(r, r) for r in order], y=share,
+                                   marker_color=[MUTED if r == "stable" else DRIFT for r in order],
+                                   text=[f"{v:.0f}%" for v in share], textposition="outside", cliponaxis=False,
+                                   hovertemplate="%{x}: %{y:.1f}%<extra></extra>"))
+            style(fig, height=380, legend=False)
+            fig.update_layout(bargap=0.5)
+            fig.update_yaxes(title="% of rows over limit", rangemode="tozero")
+            show_fig(fig)
+    with right:
+        section("How big are the errors?", "Distribution of absolute error. The red line is your limit.")
+        fig = go.Figure(go.Histogram(x=df["abs_error"], nbinsx=60, marker_color=color_for(insp), opacity=0.85,
+                                     hovertemplate="error %{x:.1f}: %{y} rows<extra></extra>"))
+        fig.add_vline(x=limit, line_width=2, line_dash="dash", line_color=CRITICAL)
+        style(fig, height=380, legend=False)
+        fig.update_xaxes(title="Absolute error")
+        fig.update_yaxes(title="Rows")
+        show_fig(fig)
+
+    section("Largest misses", "Worst rows in the selected range. Download the full list of flagged rows as CSV.")
+    worst = df[df["over"]].nlargest(200, "abs_error")[["timestamp", "regime", "actual", "predicted", "error"]].copy()
+    worst["regime"] = worst["regime"].map(lambda r: REGIME_LABEL.get(r, r))
+    worst = worst.rename(columns={"timestamp": "Time", "regime": "Regime", "actual": "Actual", "predicted": "Predicted", "error": "Error"})
+    if len(worst):
+        show_df(worst.round(2))
+        wide(st.download_button, "Download all flagged rows (CSV)", df[df["over"]].round(3).to_csv(index=False).encode(),
+             file_name=f"rows_over_limit_{insp.replace(' ', '_')}.csv", mime="text/csv")
+    else:
+        st.success("No rows exceed this limit in the selected range.")
 
 # ================================================================== Detector
 with tab_det:
@@ -498,14 +628,14 @@ with tab_det:
     for r, (level, label) in enumerate([(DATA_MIN_FEATURES, "alarm level"), (PH_PARAMS["threshold"], "alarm level"),
                                         (RULE_BACK, "old rule works again below this")], start=1):
         fig.add_hline(y=level, line_width=1, line_dash="dash", line_color=MUTED, row=r, col=1,
-                      annotation_text=label, annotation_position="top left", annotation_font=dict(size=10.5, color=MUTED))
+                      annotation_text=label, annotation_position="top left", annotation_font=dict(size=12.5, color=MUTED))
         bands(fig, row=r, labels=False)
         alarm_lines(fig, row=r)
-    style(fig, height=640, legend=False)
+    style(fig, height=755, legend=False)
     fig.update_layout(margin=dict(l=56, r=24, t=44, b=40))
     for a in fig.layout.annotations:
         if a.text in ("Sensors that moved (KS or PSI)", "Page-Hinkley statistic", "Mean residual of the frozen rule"):
-            a.update(x=0, xanchor="left", font=dict(size=13, color=INK))
+            a.update(x=0, xanchor="left", font=dict(size=15, color=INK))
     show_fig(fig)
 
     with st.expander("Window-by-window detector log"):
@@ -527,7 +657,7 @@ with tab_pred:
                                  hovertemplate="%{y:.1f}<extra>" + name + "</extra>"))
     bands(fig)
     alarm_lines(fig)
-    style(fig, height=520)
+    style(fig, height=614)
     fig.update_layout(hovermode="x unified")
     fig.update_yaxes(title="Health deterioration")
     show_fig(fig)
