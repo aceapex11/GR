@@ -57,7 +57,8 @@ def main():
             print(f"  window {i}/{n}  ({time.time() - t0:.0f}s)")
 
     print(f"Streaming {len(df) - TRAIN_END:,} rows in windows of {WINDOW}...")
-    win, pred = StreamRunner(data, strategies, WINDOW).run(progress)
+    win, pred = StreamRunner(data, strategies, WINDOW, until_recovery=cfg.adapt_until_recovery,
+                             max_adapt=cfg.max_adapt_windows).run(progress)
 
     # ---------- offline scoring (the only place ground truth is read) ----------
     score, types = detector_scorecard(win, df)
@@ -89,3 +90,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
