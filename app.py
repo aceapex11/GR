@@ -2,7 +2,7 @@
 
     streamlit run app.py
 
-Reads results/*.csv written by experiment.py (the sidebar button runs it).
+Reads results/*.csv written by run_experiment.py (the sidebar button runs it).
 Ground-truth drift labels are used only to shade charts and to score the detector.
 """
 import json
@@ -102,6 +102,7 @@ h1, h2, h3, h4 { letter-spacing: -0.01em; color: #0f172a; }
        box-shadow: 0 1px 2px rgba(15,23,42,.04); }
 .kpi-label { font-size: .74rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
 .kpi-value { font-size: 1.9rem; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; color: #0f172a; }
+.kpi-value.long { font-size: 1.2rem; line-height: 1.7; }
 .kpi-note { font-size: .78rem; color: #94a3b8; }
 
 .sec { font-size: 1.08rem; font-weight: 600; margin: 2rem 0 .15rem; color: #0f172a; }
@@ -111,11 +112,12 @@ h1, h2, h3, h4 { letter-spacing: -0.01em; color: #0f172a; }
 
 /* tabs as a pill switcher (selectors cover old and new Streamlit versions) */
 [role="tablist"] { gap: 4px; background: #e9ebf4; padding: 4px; border-radius: 12px; width: fit-content; border-bottom: none !important; }
-button[role="tab"] { height: auto; padding: 8px 18px; margin: 0; border-radius: 9px; }
-button[role="tab"], button[role="tab"] p { font-size: .95rem; font-weight: 500; color: #475569 !important; }
+button[role="tab"] { height: auto !important; padding: 8px 18px !important; margin: 0 !important; border-radius: 9px !important; }
+button[role="tab"], button[role="tab"] * { font-size: .95rem; font-weight: 500; color: #475569 !important; }
 button[role="tab"][aria-selected="true"] { background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
-button[role="tab"][aria-selected="true"], button[role="tab"][aria-selected="true"] p { color: #4f46e5 !important; }
-[data-baseweb="tab-highlight"], [data-baseweb="tab-border"] { display: none !important; }
+button[role="tab"][aria-selected="true"], button[role="tab"][aria-selected="true"] * { color: #4f46e5 !important; }
+button[role="tab"][aria-selected="true"] { background: #fff !important; }
+[data-baseweb="tab-highlight"], [data-baseweb="tab-border"], [data-testid="stTabHighlight"], [role="tablist"] > div:not([role="tab"]) { display: none !important; }
 
 /* charts and tables as cards */
 [data-testid="stPlotlyChart"] { background: #fff; border: 1px solid #e5e8f0; border-radius: 16px; padding: 10px 8px;
@@ -155,7 +157,7 @@ def section(title, note=None):
 
 
 def kpi_strip(items):
-    cells = "".join(f'<div class="kpi"><div class="kpi-label">{l}</div><div class="kpi-value">{v}</div>'
+    cells = "".join(f'<div class="kpi"><div class="kpi-label">{l}</div><div class="kpi-value{" long" if len(str(v)) > 13 else ""}">{v}</div>'
                     f'<div class="kpi-note">{n}</div></div>' for l, v, n in items)
     st.markdown(f'<div class="kpi-strip">{cells}</div>', unsafe_allow_html=True)
 
@@ -189,9 +191,21 @@ if (RESULTS / "config.json").is_file():
 with st.sidebar:
     st.markdown("**Run experiment**")
     st.caption("Trains the GRU, streams the data and rewrites the results folder.")
-    full_training = st.checkbox("Full training (slower)", value=False)
+    full_training = st.checkbox("Full training (slower)", value=False,
+                                help="Off runs the quick version (--fast). On trains fully, which can take much longer.")
     if wide(st.button, "Run GRU experiment", type="primary"):
-        cmd = [sys.executable, str(ROOT / "experiment.py")] + (["--full"] if full_training else [])
+        script = next((ROOT / n for n in ("experiment.py", "run_experiment.py") if (ROOT / n).is_file()), None)
+        if script is None:
+            st.session_state["run_error"] = "No experiment script found. Expected run_experiment.py next to app.py."
+            st.rerun()
+        # the script's default is a full run; --fast is the quick option. Only pass flags it understands.
+        script_text = script.read_text(errors="ignore")
+        flags = []
+        if "--fast" in script_text and not full_training:
+            flags.append("--fast")
+        elif "--full" in script_text and full_training:
+            flags.append("--full")
+        cmd = [sys.executable, str(script)] + flags
         try:
             with st.spinner("Running. This can take several minutes."):
                 r = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=7200)
@@ -230,7 +244,7 @@ if st.session_state.get("run_error"):
         st.rerun()
 
 if not has_results:
-    section("No results yet", "Open the sidebar and select <b>Run GRU experiment</b>, or run <code>python experiment.py</code> "
+    section("No results yet", "Open the sidebar and select <b>Run GRU experiment</b>, or run <code>python run_experiment.py</code> "
                               "in a terminal. The fast setting takes a few minutes.")
     st.stop()
 
