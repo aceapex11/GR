@@ -1,7 +1,7 @@
 """Run the whole GRU drift experiment and write results/*.csv
 
-    python run_experiment.py            # full training
-    python run_experiment.py --fast     # quick smoke test
+    python experiment.py            # full training
+    python experiment.py --fast     # quick smoke test
 """
 import argparse
 import json
@@ -72,6 +72,12 @@ def main():
     pd.DataFrame([score]).to_csv(out / "detector_scorecard.csv", index=False)
     types.to_csv(out / "drift_type_evaluation.csv", index=False)
     win[win.alarm | win.recovery | win.adapted].to_csv(out / "adaptation_events.csv", index=False)
+
+    # how much the blend trusted each model in every window (only if a blend was run)
+    for s in strategies:
+        if getattr(s, "weight_history", None):
+            pd.DataFrame(s.weight_history).to_csv(out / "blend_weights.csv", index=False)
+
     (out / "config.json").write_text(json.dumps(
         {"fast": args.fast, "seed": args.seed, "window": WINDOW, "train_end": TRAIN_END,
          "gru": asdict(cfg)}, indent=2))
