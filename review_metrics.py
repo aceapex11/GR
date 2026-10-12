@@ -321,6 +321,17 @@ def persistence_table(EP, static):
     """
     if EP is None or EP.empty:
         return pd.DataFrame()
+
+    # Backward compatibility: older saved episodes.csv files may not contain
+    # recovery fields. Keep the dashboard usable and mark recovery as unknown
+    # instead of crashing with KeyError.
+    required = ["Strategy", "episode", "recovered", "recovery_windows",
+                "late_mae", "early_mae", "post_mae", "baseline_mae"]
+    EP = EP.copy()
+    for col in required:
+        if col not in EP.columns:
+            EP[col] = np.nan
+
     g = EP.groupby(["Strategy", "episode"], as_index=False).mean(numeric_only=True)
     s_late = g[g["Strategy"] == static].set_index("episode")["late_mae"]
     rows = []
