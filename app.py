@@ -189,38 +189,70 @@ if (RESULTS / "config.json").is_file():
     except Exception:
         cfg = {}
 
+
+def run_script(label, script_name, flags):
+    """Run one project script and return its captured output and success status."""
+    script = ROOT / script_name
+    if not script.is_file():
+        return f"Missing {script_name}. Keep it beside app.py.", False
+    command = [sys.executable, str(script), *flags]
+    try:
+        with st.spinner(f"Running {label}. This may take several minutes..."):
+            result = subprocess.run(
+                command,
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=7200,
+            )
+        output = (result.stdout or "") + "\n" + (result.stderr or "")
+        return output.strip()[-12000:], result.returncode == 0
+    except subprocess.TimeoutExpired as exc:
+        partial = (exc.stdout or "") + "\n" + (exc.stderr or "")
+        return f"{label} exceeded the two-hour limit.\n{partial}"[-12000:], False
+    except Exception as exc:
+        return f"Could not start {label}: {exc}", False
+
+
 with st.sidebar:
-    st.markdown("**Run experiment**")
-    st.caption("Trains the GRU, streams the data and rewrites the results folder.")
-    full_training = st.checkbox("Full training (slower)", value=False,
-                                help="Off runs the quick version (--fast). On trains fully, which can take much longer.")
-    if wide(st.button, "Run GRU experiment", type="primary"):
-        script = next((ROOT / n for n in ("experiment.py", "run_experiment.py") if (ROOT / n).is_file()), None)
-        if script is None:
-            st.session_state["run_error"] = "No experiment script found. Expected run_experiment.py next to app.py."
-            st.rerun()
-        # the script's default is a full run; --fast is the quick option. Only pass flags it understands.
-        script_text = script.read_text(errors="ignore")
-        flags = []
-        if "--fast" in script_text and not full_training:
-            flags.append("--fast")
-        elif "--full" in script_text and full_training:
-            flags.append("--full")
-        cmd = [sys.executable, str(script)] + flags
-        try:
-            with st.spinner("Running. This can take several minutes."):
-                r = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=7200)
-            out_text, ok_run = (r.stderr or "") + "\n" + (r.stdout or ""), r.returncode == 0
-        except subprocess.TimeoutExpired:
-            out_text, ok_run = "The run took longer than 2 hours and was stopped.", False
-        except Exception as exc:
-            out_text, ok_run = f"Could not start the experiment: {exc}", False
-        if ok_run:
+    st.markdown("**Experiment pipeline**")
+    st.caption(
+        "Run the GRU streaming experiment and then evaluate adaptation strategies. "
+        "The model review is saved separately in results/review/."
+    )
+    full_training = st.checkbox(
+        "Full training (slower)",
+        value=False,
+        help="Unchecked runs the quick smoke test. Checked runs the full settings and three-seed review.",
+    )
+    flags = [] if full_training else ["--fast"]
+
+    if wide(st.button, "Run complete pipeline", type="primary"):
+        logs = []
+        output, ok = run_script("main streaming experiment", "experiment.py", flags)
+        logs.append("===== MAIN STREAMING EXPERIMENT =====\n" + output)
+        if ok:
+            output, ok = run_script("multi-seed model review", "review_run.py", flags)
+            logs.append("===== MULTI-SEED MODEL REVIEW =====\n" + output)
+        st.session_state["pipeline_log"] = "\n\n".join(logs)
+        st.session_state["pipeline_success"] = ok
+        if ok:
             st.session_state.pop("run_error", None)
             st.rerun()
         else:
-            st.session_state["run_error"] = out_text.strip()[-8000:]
-            st.error("The run failed. The reason is shown on the main page.")
+            st.session_state["run_error"] = st.session_state["pipeline_log"]
+            st.error("Pipeline failed. Open the error details on the main page.")
+
+    if wide(st.button, "Run model review only"):
+        output, ok = run_script("multi-seed model review", "review_run.py", flags)
+        st.session_state["pipeline_log"] = output
+        st.session_state["pipeline_success"] = ok
+        if ok:
+            st.session_state.pop("run_error", None)
+            st.rerun()
+        else:
+            st.session_state["run_error"] = output
+            st.error("Model review failed. Open the error details on the main page.")
 
 meta = ""
 if cfg:
@@ -230,6 +262,13 @@ st.markdown(
     f'<div class="hero"><div><div class="hero-title">Drift monitor</div>'
     f'<div class="hero-sub">GRU regression on a 60,000-row industrial sensor stream, with drift detection and model adaptation</div></div>'
     f'{badge}</div>', unsafe_allow_html=True)
+
+if st.session_state.get("pipeline_success"):
+    st.success("Pipeline completed. The latest experiment and model-review results are ready.")
+    _pipeline_log = st.session_state.get("pipeline_log", "")
+    if _pipeline_log:
+        with st.expander("View pipeline log"):
+            st.code(_pipeline_log, language="text")
 
 if st.session_state.get("run_error"):
     _msg = st.session_state["run_error"]
