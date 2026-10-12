@@ -309,8 +309,8 @@ def window_mae_cols():
 
 
 # ------------------------------------------------------------------ tabs
-tab_over, tab_model, tab_err, tab_det, tab_pred, tab_ev = st.tabs(
-    ["Overview", "Model performance", "Error inspector", "Detector", "Predictions", "Events"])
+tab_over, tab_model, tab_err, tab_det, tab_pred, tab_ev, tab_rev = st.tabs(
+    ["Overview", "Model performance", "Error inspector", "Detector", "Predictions", "Events", "Model review"])
 
 # ================================================================== Overview
 with tab_over:
@@ -725,3 +725,10 @@ with tab_ev:
             "window": "Window", "timestamp": "Date", "diagnosis": "Diagnosis",
             "features_moved": "Sensors moved", "ph_stat": "PH statistic"}).round(2)
         show_df(out, column_config={"Sensors moved": st.column_config.TextColumn(width="large")})
+
+# ================================================================== Model review
+with tab_rev:
+    import review_tab
+    review_tab.render(RESULTS / "review", dict(
+        section=section, show_fig=show_fig, show_df=show_df, style=style, color_for=color_for, kpi_strip=kpi_strip,
+        INK=INK, INK2=INK2, MUTED=MUTED, BORDER=BORDER, SURFACE=SURFACE, GOOD_TEXT=GOOD_TEXT, CRITICAL=CRITICAL, DRIFT=DRIFT))
