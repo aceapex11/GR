@@ -333,6 +333,13 @@ def persistence_table(EP, static):
             EP[col] = np.nan
 
     g = EP.groupby(["Strategy", "episode"], as_index=False).mean(numeric_only=True)
+    # pandas may omit all-unknown/object columns during aggregation; restore them
+    # explicitly so old result files remain compatible.
+    for col in required:
+        if col not in g.columns:
+            g[col] = np.nan
+    if "Strategy" not in g.columns or "episode" not in g.columns:
+        return pd.DataFrame()
     s_late = g[g["Strategy"] == static].set_index("episode")["late_mae"]
     rows = []
     for c, d in g.groupby("Strategy"):
