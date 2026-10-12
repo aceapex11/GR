@@ -17,6 +17,7 @@ Improvements added on top of the original five:
                               well it did on recent windows
 """
 import copy
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -137,6 +138,8 @@ class _Strategy:
         self.diagnosis = "none"          # set by the engine before every update
         self.n_updates = 0
         self.n_rollbacks = 0
+        self.train_seconds = 0.0         # wall-clock time spent inside update()
+        self.train_samples = 0           # rows seen by the optimiser, summed over updates (not times epochs)
 
     def _epochs(self, base_epochs):
         """More epochs when the relationship itself has changed (relational or both)."""
@@ -157,10 +160,26 @@ class _Strategy:
 
     def update(self, idx):
         self.n_updates += 1
-        return self._update(np.asarray(idx))
+        t0 = time.perf_counter()
+        used = self._update(np.asarray(idx))
+        self.train_seconds += time.perf_counter() - t0
+        self.train_samples += int(used)
+        return used
 
     def _update(self, idx):
         return 0
+
+    def stored_rows(self):
+        """Raw rows this strategy must keep to do its next update (0 = nothing beyond the model)."""
+        return 0
+
+    def memory_mb(self):
+        """ESTIMATED state a deployment must hold: model weights, the rollback copy, and stored rows.
+        It is not process RSS and ignores transient training buffers; it is for comparing strategies."""
+        n_par = sum(p.numel() for p in self.model.parameters())
+        copies = 2 if self.rollback_on_recovery else 1
+        row_bytes = 4 * (len(self.d.features) + 1)
+        return (4 * n_par * copies + row_bytes * self.stored_rows()) / 1e6
 
     def rollback(self):
         """Return to the original pre-trained weights (the old behaviour is valid again)."""
@@ -189,6 +208,7 @@ class FullRetrain(_Strategy):
     def _update(self, idx):
         c = self.cfg
         hist = np.arange(0, int(idx[-1]) + 1)
+        self._seen = len(hist)           # full retraining must keep all labelled history
         if len(hist) > c.full_cap:
             hist = np.sort(np.random.default_rng(self.seed + self.n_updates)
                            .choice(hist, c.full_cap, replace=False))
@@ -197,6 +217,9 @@ class FullRetrain(_Strategy):
         fit(self.model, self.d, hist, c.full_epochs, c.base_lr, c.batch, seed=self.seed + self.n_updates,
             huber_beta=c.huber_beta)
         return len(hist)
+
+    def stored_rows(self):
+        return self._seen if hasattr(self, "_seen") else self.d.train_end
 
 
 class Replay(_Strategy):
@@ -215,6 +238,9 @@ class Replay(_Strategy):
         self.mem.add(idx)
         return len(train_idx)
 
+    def stored_rows(self):
+        return len(self.mem.items)
+
 
 class Blend(_Strategy):
     """Error-weighted average of other strategies.
@@ -232,6 +258,8 @@ class Blend(_Strategy):
         self.diagnosis = "none"
         self.n_updates = 0
         self.n_rollbacks = 0
+        self.train_seconds = 0.0
+        self.train_samples = 0
         self.ema = None
         self.weight_history = []          # one row per window: the weights used for that window
         self._w = np.full(len(self.members), 1.0 / len(self.members))
@@ -260,6 +288,12 @@ class Blend(_Strategy):
 
     def rollback(self):
         pass
+
+    def stored_rows(self):
+        return sum(m.stored_rows() for m in self.members)
+
+    def memory_mb(self):
+        return sum(m.memory_mb() for m in self.members)
 
 
 def build_strategies(data, cfg, seed=0, base=None):
