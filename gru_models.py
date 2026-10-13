@@ -15,8 +15,6 @@ Improvements added on top of the original five:
   * Output clipping           every prediction is clipped to the valid target range (cfg.clip_range)
   * "... + rollback" variants when the detector says the old behaviour is back (recovery flag),
                               the model returns to the original pre-trained weights
-  * "Blend (error-weighted)"  averages all other strategies, trusting each in proportion to how
-                              well it did on recent windows
 """
 import copy
 import time
@@ -55,9 +53,6 @@ class GRUConfig:
     full_cap: int = 20000        # max rows used by one full retraining (uniform subsample of all history)
     clip_range: tuple = (0.0, 100.0)   # valid range of the target; set to None to disable clipping
     rollback_variants: bool = True     # add "+ rollback" copies of Transfer and Replay 500
-    blend: bool = True                 # add the error-weighted blend of all other strategies
-    blend_decay: float = 0.3           # memory of the blend's error average (0 = only the last window; higher = slower)
-    blend_power: float = 6.0           # higher = the blend leans harder on the currently best model
     huber_beta: float = 0.5            # Huber loss (in target std units): robust to outliers; 0 = plain MSE
     hard_drift_mult: float = 1.5       # relational / both drift: this many times more epochs per update
     adapt_until_recovery: bool = True  # keep adapting while drift is active, not just 3 windows
@@ -300,60 +295,6 @@ class Replay(_Strategy):
         return len(self.mem.items)
 
 
-class Blend(_Strategy):
-    """Error-weighted average of other strategies.
-
-    After every window (labels revealed, same as the detector) each member's MAE is folded into a
-    running average. The next window's prediction weights members by 1 / error^power, so the blend
-    follows whichever model is currently doing best, without needing to know the drift type.
-    It never trains anything itself; the members are adapted by the engine as usual.
-    """
-
-    def __init__(self, name, members, data, cfg, seed=0):
-        self.name, self.d, self.cfg, self.seed = name, data, cfg, int(seed)
-        self.members = list(members)
-        self.rollback_on_recovery = False
-        self.diagnosis = "none"
-        self.n_updates = 0
-        self.n_rollbacks = 0
-        self.train_seconds = 0.0
-        self.train_samples = 0
-        self.ema = None
-        self.weight_history = []          # one row per window: the weights used for that window
-        self._w = np.full(len(self.members), 1.0 / len(self.members))
-
-    def weights(self):
-        if self.ema is None:
-            return np.full(len(self.members), 1.0 / len(self.members))
-        w = np.maximum(self.ema, 1e-6) ** (-self.cfg.blend_power)
-        return w / w.sum()
-
-    def predict(self, idx):
-        self._w = self.weights()
-        preds = np.stack([np.asarray(m.predict(idx), float) for m in self.members])
-        return self._w @ preds
-
-    def observe(self, idx, y_true):
-        """Called by the engine after each window's predictions, before any adaptation."""
-        err = np.array([float(np.mean(np.abs(np.asarray(m.predict(idx), float) - y_true))) for m in self.members])
-        dcy = self.cfg.blend_decay
-        self.ema = err if self.ema is None else dcy * self.ema + (1 - dcy) * err
-        self.weight_history.append({"window": len(self.weight_history),
-                                    **{m.name: float(w) for m, w in zip(self.members, self._w)}})
-
-    def update(self, idx):
-        return 0
-
-    def rollback(self):
-        pass
-
-    def stored_rows(self):
-        return sum(m.stored_rows() for m in self.members)
-
-    def memory_mb(self):
-        return sum(m.memory_mb() for m in self.members)
-
-
 def build_strategies(data, cfg, seed=0, base=None):
     base = base if base is not None else train_base(data, cfg, seed)
     tlabel = {"head": "frozen GRU", "top": "top layer unfrozen", "all": "fine-tune all"}[cfg.transfer_unfreeze]
@@ -375,6 +316,4 @@ def build_strategies(data, cfg, seed=0, base=None):
             tr.rollback_on_recovery = True
             out.append(tr)
 
-    if cfg.blend:
-        out.append(Blend("Blend (error-weighted)", list(out), data, cfg, seed))
     return out
