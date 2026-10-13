@@ -237,12 +237,3 @@ def render(folder, ctx):
     order = {"failure": 0, "untestable": 1, "noise": 2, "supported": 3, "note": 4}
     for c in sorted(concl, key=lambda c: order.get(c["level"], 9)):
         st.markdown(f'{_pill(ctx, c["level"])} &nbsp; **{c["topic"]}** - {c["text"]}', unsafe_allow_html=True)
-    st.markdown("")
-    win = pd.DataFrame({rm.LABEL[p]: rm.seed_matrix(M, p, metric).idxmin(axis=1) for p in phases})
-    win.index = [f"Seed {s}" for s in win.index]
-    st.markdown("**Best strategy in each seed**")
-    show_df(win.reset_index().rename(columns={"index": "Seed"}))
-    st.markdown(f"**Overall {metric} by seed**")
-    sm = rm.seed_matrix(M, "overall", metric).round(3)
-    sm.index = [f"Seed {s}" for s in sm.index]
-    show_df(sm.reset_index().rename(columns={"seed": "Seed", "index": "Seed"}))
