@@ -5,7 +5,9 @@ schedule from the detector (see engine.py), so differences in error come from th
 adaptation method only.
 
   Static                      frozen baseline
-  Transfer - frozen GRU       recurrent layer frozen, only the regression head is re-trained
+  Transfer                    lower GRU layer(s) frozen; the regression head and (by default) the TOP GRU
+                              layer are re-trained on ALL rows of the current drift episode, and the model
+                              returns to the pre-trained weights when the drift ends (see TransferFrozen)
   Full retraining             brand-new GRU trained on all labelled history so far
   Continual + replay K        fine-tune the current GRU on the new window + K replayed old rows
 
@@ -32,11 +34,19 @@ torch.set_num_threads(max(1, min(4, torch.get_num_threads())))
 class GRUConfig:
     seq_len: int = 12
     hidden: int = 48
+    n_layers: int = 2                  # stacked GRU layers (2 gives transfer a generic lower layer to freeze)
     batch: int = 256
     base_epochs: int = 30
     base_lr: float = 3e-3
     transfer_epochs: int = 25
     transfer_lr: float = 3e-3
+    transfer_unfreeze: str = "top"     # "head" = only the MLP head (original) | "top" = head + top GRU layer | "all"
+    transfer_gru_lr_mult: float = 0.3  # unfrozen GRU layers learn at this fraction of transfer_lr (less forgetting)
+    transfer_episode: bool = True      # train on every row of the current drift episode, not just the newest window
+    transfer_episode_cap: int = 3000   # max rows kept for that (uniform subsample beyond it)
+    transfer_replay: int = 0           # OLD-regime rows mixed in. 0 on purpose: after a relational drift they carry
+                                       # labels that contradict the new relation (measured: replay 300 is ~35% worse)
+    transfer_rollback: bool = True     # back to the pre-trained weights when the detector reports recovery
     replay_epochs: int = 12
     replay_lr: float = 1e-3
     replay_sizes: tuple = (100, 500)
@@ -60,9 +70,9 @@ class GRUConfig:
 
 
 class GRURegressor(nn.Module):
-    def __init__(self, n_features, hidden=48):
+    def __init__(self, n_features, hidden=48, n_layers=1):
         super().__init__()
-        self.gru = nn.GRU(n_features, hidden, batch_first=True)
+        self.gru = nn.GRU(n_features, hidden, num_layers=int(n_layers), batch_first=True)
         self.head = nn.Sequential(nn.Linear(hidden, 32), nn.ReLU(), nn.Linear(32, 1))
 
     def forward(self, x):
@@ -96,7 +106,7 @@ def fit(model, data, idx, epochs, lr, batch, params=None, seed=0, huber_beta=0.0
 def train_base(data, cfg, seed=0):
     """Pre-train the GRU on the normal history only (rows before train_end)."""
     torch.manual_seed(seed)
-    model = GRURegressor(len(data.features), cfg.hidden)
+    model = GRURegressor(len(data.features), cfg.hidden, cfg.n_layers)
     fit(model, data, np.arange(data.train_end), cfg.base_epochs, cfg.base_lr, cfg.batch, seed=seed,
         huber_beta=cfg.huber_beta)
     return model
@@ -192,16 +202,64 @@ class Static(_Strategy):
 
 
 class TransferFrozen(_Strategy):
+    """Transfer learning from the pre-trained GRU.
+
+    The lower GRU layers stay frozen (generic features). What is re-trained depends on cfg.transfer_unfreeze:
+      "head" - only the MLP head                      (original behaviour)
+      "top"  - the head and the top GRU layer          (default; the GRU layer learns at a lower rate)
+      "all"  - everything (then it is just continual fine-tuning)
+
+    Three things decide whether transfer beats Static (found with the stand-in study, surrogate_study.py):
+      1. Train on the whole drift episode seen so far (cfg.transfer_episode). One 600-row window is a narrow,
+         strongly autocorrelated slice of input space, so a head fitted to it extrapolates badly.
+      2. Do NOT replay old-regime rows (cfg.transfer_replay = 0). After a relational drift their labels
+         contradict the new relation and drag the model back towards the old one.
+      3. Roll back to the pre-trained weights on recovery (the engine does this when rollback_on_recovery
+         is set; cfg.transfer_rollback). Without it the model stays tuned to a regime that has ended.
+    """
+
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
-        for p in self.model.gru.parameters():
-            p.requires_grad = False
+        mode = self.cfg.transfer_unfreeze
+        if mode not in ("head", "top", "all"):
+            raise ValueError(f"transfer_unfreeze must be 'head', 'top' or 'all', got {mode!r}")
+        top = f"_l{self.model.gru.num_layers - 1}"
+        for name, p in self.model.gru.named_parameters():
+            p.requires_grad = mode == "all" or (mode == "top" and name.endswith(top))
+        self.rng = np.random.default_rng(self.seed + 3)
+        self.mem = (Reservoir(self.cfg.buffer_cap, np.arange(self.d.train_end), self.rng)
+                    if self.cfg.transfer_replay > 0 else None)
+        self.ep_rows = np.empty(0, int)          # rows of the current drift episode
+
+    def rollback(self):
+        super().rollback()
+        self.ep_rows = np.empty(0, int)          # a new episode starts from the original model and fresh data
 
     def _update(self, idx):
         c = self.cfg
-        fit(self.model, self.d, idx, self._epochs(c.transfer_epochs), c.transfer_lr, c.batch,
-            params=self.model.head.parameters(), seed=self.seed + self.n_updates, huber_beta=c.huber_beta)
-        return len(idx)
+        train_idx = np.asarray(idx)
+        if c.transfer_episode:
+            rows = np.concatenate([self.ep_rows, train_idx])
+            if len(rows) > c.transfer_episode_cap:
+                rows = np.sort(self.rng.choice(rows, c.transfer_episode_cap, replace=False))
+            self.ep_rows = rows
+            train_idx = rows
+        if self.mem is not None:
+            old = self.mem.sample(c.transfer_replay)
+            if len(old):
+                train_idx = np.concatenate([train_idx, old])
+        groups = [{"params": list(self.model.head.parameters()), "lr": c.transfer_lr}]
+        gru_params = [p for p in self.model.gru.parameters() if p.requires_grad]
+        if gru_params:
+            groups.append({"params": gru_params, "lr": c.transfer_lr * c.transfer_gru_lr_mult})
+        fit(self.model, self.d, train_idx, self._epochs(c.transfer_epochs), c.transfer_lr, c.batch,
+            params=groups, seed=self.seed + self.n_updates, huber_beta=c.huber_beta)
+        if self.mem is not None:
+            self.mem.add(idx)
+        return len(train_idx)
+
+    def stored_rows(self):
+        return len(self.ep_rows) + (len(self.mem.items) if self.mem is not None else 0)
 
 
 class FullRetrain(_Strategy):
@@ -213,7 +271,7 @@ class FullRetrain(_Strategy):
             hist = np.sort(np.random.default_rng(self.seed + self.n_updates)
                            .choice(hist, c.full_cap, replace=False))
         torch.manual_seed(self.seed + 1000 + self.n_updates)
-        self.model = GRURegressor(len(self.d.features), c.hidden)
+        self.model = GRURegressor(len(self.d.features), c.hidden, c.n_layers)
         fit(self.model, self.d, hist, c.full_epochs, c.base_lr, c.batch, seed=self.seed + self.n_updates,
             huber_beta=c.huber_beta)
         return len(hist)
@@ -298,20 +356,24 @@ class Blend(_Strategy):
 
 def build_strategies(data, cfg, seed=0, base=None):
     base = base if base is not None else train_base(data, cfg, seed)
+    tlabel = {"head": "frozen GRU", "top": "top layer unfrozen", "all": "fine-tune all"}[cfg.transfer_unfreeze]
     out = [
         Static("Static (no adaptation)", base, data, cfg, seed),
-        TransferFrozen("Transfer - frozen GRU", base, data, cfg, seed),
+        TransferFrozen(f"Transfer - {tlabel}", base, data, cfg, seed),
         FullRetrain("Full retraining", base, data, cfg, seed),
     ]
     out += [Replay(f"Continual + replay {k}", base, data, cfg, k, seed) for k in cfg.replay_sizes]
 
+    out[1].rollback_on_recovery = cfg.transfer_rollback      # the main Transfer rolls back by default
     if cfg.rollback_variants:
-        tr = TransferFrozen("Transfer - frozen GRU + rollback", base, data, cfg, seed)
-        tr.rollback_on_recovery = True
         k = max(cfg.replay_sizes)
         rp = Replay(f"Continual + replay {k} + rollback", base, data, cfg, k, seed)
         rp.rollback_on_recovery = True
-        out += [tr, rp]
+        out.append(rp)
+        if not cfg.transfer_rollback:                         # otherwise Transfer already IS the rollback version
+            tr = TransferFrozen(f"Transfer - {tlabel} + rollback", base, data, cfg, seed)
+            tr.rollback_on_recovery = True
+            out.append(tr)
 
     if cfg.blend:
         out.append(Blend("Blend (error-weighted)", list(out), data, cfg, seed))
