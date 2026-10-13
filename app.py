@@ -31,7 +31,7 @@ DRIFT = "#f59e0b"
 BAND = "rgba(245,158,11,0.10)"
 FONT = '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif'
 # one fixed colour per strategy; Static is the neutral grey baseline
-STRATEGY_COLORS = [("blend", "#0d9488"), ("rollback", "#d946ef"),
+STRATEGY_COLORS = [("rollback", "#d946ef"),
                    ("static", "#94a3b8"), ("transfer", "#3b82f6"), ("full", "#f97316"),
                    ("replay 100", "#10b981"), ("replay 500", "#8b5cf6")]
 REGIME_LABEL = {"stable": "Stable", "data_drift": "Data", "relational_drift": "Relational", "both": "Both"}
@@ -218,14 +218,11 @@ def run_script(label, script_name, flags):
 
 with st.sidebar:
     st.markdown("**Experiment pipeline**")
-    st.caption(
-        "Run the GRU streaming experiment and then evaluate adaptation strategies. "
-        "The model review is saved separately in results/review/."
-    )
+    st.caption("Run the GRU streaming experiment and evaluate the adaptation strategies.")
     full_training = st.checkbox(
         "Full training (slower)",
         value=False,
-        help="Unchecked runs the quick smoke test. Checked runs the full settings and three-seed review.",
+        help="Unchecked runs the quick smoke test. Checked runs the full training settings.",
     )
     flags = [] if full_training else ["--fast"]
 
@@ -233,9 +230,6 @@ with st.sidebar:
         logs = []
         output, ok = run_script("main streaming experiment", "experiment.py", flags)
         logs.append("===== MAIN STREAMING EXPERIMENT =====\n" + output)
-        if ok:
-            output, ok = run_script("multi-seed model review", "review_run.py", flags)
-            logs.append("===== MULTI-SEED MODEL REVIEW =====\n" + output)
         st.session_state["pipeline_log"] = "\n\n".join(logs)
         st.session_state["pipeline_success"] = ok
         if ok:
@@ -244,17 +238,6 @@ with st.sidebar:
         else:
             st.session_state["run_error"] = st.session_state["pipeline_log"]
             st.error("Pipeline failed. Open the error details on the main page.")
-
-    if wide(st.button, "Run model review only"):
-        output, ok = run_script("multi-seed model review", "review_run.py", flags)
-        st.session_state["pipeline_log"] = output
-        st.session_state["pipeline_success"] = ok
-        if ok:
-            st.session_state.pop("run_error", None)
-            st.rerun()
-        else:
-            st.session_state["run_error"] = output
-            st.error("Model review failed. Open the error details on the main page.")
 
 meta = ""
 if cfg:
@@ -266,7 +249,7 @@ st.markdown(
     f'{badge}</div>', unsafe_allow_html=True)
 
 if st.session_state.get("pipeline_success"):
-    st.success("Pipeline completed. The latest experiment and model-review results are ready.")
+    st.success("Pipeline completed. The latest experiment results are ready.")
     _pipeline_log = st.session_state.get("pipeline_log", "")
     if _pipeline_log:
         with st.expander("View pipeline log"):
@@ -529,23 +512,6 @@ with tab_model:
         fig.update_layout(hovermode="x unified")
         fig.update_yaxes(title="Window MAE", rangemode="tozero")
         show_fig(fig)
-
-        bw = read("blend_weights.csv")
-        if bw is not None and len(bw):
-            section("What the blend trusted", "Share of the blend's weight given to each model, window by window. "
-                                              "It shifts toward whichever model has been most accurate recently.")
-            xs = log.set_index("window")["timestamp"].reindex(bw["window"]).values
-            fig = go.Figure()
-            for c in [c for c in bw.columns if c != "window"]:
-                col = color_for(c)
-                fig.add_trace(go.Scatter(x=xs, y=bw[c] * 100, name=c, mode="lines", stackgroup="w",
-                                         line=dict(width=0.6, color=col, shape="hv"), fillcolor=rgba(col, 0.78),
-                                         hovertemplate="%{y:.0f}%<extra>" + c + "</extra>"))
-            bands(fig)
-            style(fig, height=400)
-            fig.update_layout(hovermode="x unified")
-            fig.update_yaxes(title="Weight (%)", range=[0, 100])
-            show_fig(fig)
 
         left, right = st.columns(2)
         merged = pred[["row", "actual", chosen]].copy()
