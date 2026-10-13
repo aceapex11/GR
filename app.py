@@ -31,7 +31,7 @@ DRIFT = "#f59e0b"
 BAND = "rgba(245,158,11,0.10)"
 FONT = '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif'
 # one fixed colour per strategy; Static is the neutral grey baseline
-STRATEGY_COLORS = [("blend", "#0d9488"), ("transfer - frozen gru + rollback", "#0ea5e9"), ("rollback", "#d946ef"),
+STRATEGY_COLORS = [("blend", "#0d9488"), ("rollback", "#d946ef"),
                    ("static", "#94a3b8"), ("transfer", "#3b82f6"), ("full", "#f97316"),
                    ("replay 100", "#10b981"), ("replay 500", "#8b5cf6")]
 REGIME_LABEL = {"stable": "Stable", "data_drift": "Data", "relational_drift": "Relational", "both": "Both"}
@@ -39,6 +39,8 @@ REGIME_LABEL = {"stable": "Stable", "data_drift": "Data", "relational_drift": "R
 
 def color_for(name):
     low = name.lower()
+    if "transfer" in low and "rollback" in low:
+        return "#0ea5e9"
     for key, col in STRATEGY_COLORS:
         if key in low:
             return col
@@ -348,8 +350,11 @@ def window_mae_cols():
 
 
 # ------------------------------------------------------------------ tabs
-tab_over, tab_model, tab_err, tab_det, tab_pred, tab_ev, tab_rev = st.tabs(
-    ["Overview", "Model performance", "Error inspector", "Detector", "Predictions", "Events", "Model review"])
+# Model review tab is commented out (see the block at the bottom). To bring it back, use the 7-tab line below.
+# tab_over, tab_model, tab_err, tab_det, tab_pred, tab_ev, tab_rev = st.tabs(
+#     ["Overview", "Model performance", "Error inspector", "Detector", "Predictions", "Events", "Model review"])
+tab_over, tab_model, tab_err, tab_det, tab_pred, tab_ev = st.tabs(
+    ["Overview", "Model performance", "Error inspector", "Detector", "Predictions", "Events"])
 
 # ================================================================== Overview
 with tab_over:
@@ -765,9 +770,9 @@ with tab_ev:
             "features_moved": "Sensors moved", "ph_stat": "PH statistic"}).round(2)
         show_df(out, column_config={"Sensors moved": st.column_config.TextColumn(width="large")})
 
-# ================================================================== Model review
-with tab_rev:
-    import review_tab
-    review_tab.render(RESULTS / "review", dict(
-        section=section, show_fig=show_fig, show_df=show_df, style=style, color_for=color_for, kpi_strip=kpi_strip,
-        INK=INK, INK2=INK2, MUTED=MUTED, BORDER=BORDER, SURFACE=SURFACE, GOOD_TEXT=GOOD_TEXT, CRITICAL=CRITICAL, DRIFT=DRIFT))
+# # ================================================================== Model review
+# with tab_rev:
+#     import review_tab
+#     review_tab.render(RESULTS / "review", dict(
+#         section=section, show_fig=show_fig, show_df=show_df, style=style, color_for=color_for, kpi_strip=kpi_strip,
+#         INK=INK, INK2=INK2, MUTED=MUTED, BORDER=BORDER, SURFACE=SURFACE, GOOD_TEXT=GOOD_TEXT, CRITICAL=CRITICAL, DRIFT=DRIFT))
